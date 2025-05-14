@@ -1,0 +1,33 @@
+# Pythonキャッシュファイル
+__pycache__/
+*.pyc
+*.pyo
+
+# 仮想環境
+.venv/
+.venv-*/
+
+# 大容量データファイル（出力・中間処理結果など）
+*.csv
+*.xlsx
+*.pickle
+*.tsv
+*.txt
+
+# 図・画像・スライドなど（再生成可能 or レポート用途）
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.pdf
+*.pptx
+*.docx
+
+# ログ・一時ファイル
+*.log
+*.tmp
+*.bak
+
+# IDEやOS依存のファイル
+.DS_Store
+*.swp
