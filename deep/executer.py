@@ -1,5 +1,6 @@
 from data_reader import SentenceConverter
 from dual_attention import DualAttention
+import os
 
 class Executer:
     def __init__(self, file_name, col_name_from, col_name_to) -> None:
@@ -20,15 +21,19 @@ class Executer:
 
 
 class AttentionEvaluator:
-    def __init__(self, in_encoder, out_encoder, input_tensor, output_tensor, sentence_lists) -> None:
+    def __init__(self, in_encoder, out_encoder, input_tensor, output_tensor, sentence_lists, col_name_from, col_name_to) -> None:
         self.encoders = [in_encoder, out_encoder]
         for encoder in self.encoders:
             encoder.eval()
         self.sentence_tensors = [input_tensor, output_tensor]
         self.sentence_lists = sentence_lists
+        self.col_name_from = col_name_from
+        self.col_name_to = col_name_to
 
     def evaluate(self):
-        file_name = "out.csv"
+        output_dir = "./outputs"
+        os.makedirs(output_dir, exist_ok=True)
+        file_name = os.path.join(output_dir, f"[{self.col_name_from}]2[{self.col_name_to}].csv")
         with open(file_name, mode="w") as f:
             for encoder, sentence_tensor, sentence_lists in zip(self.encoders, self.sentence_tensors, self.sentence_lists):
                 attention_value_list = encoder.get_attention(sentence_tensor)
@@ -52,12 +57,12 @@ class AttentionEvaluator:
 
 if __name__ == "__main__":
     file_name = "/home/al22091/graduation_research/dataset20240126.csv"
-    col_name_from = "curiosity"
-    col_name_to = "interesting_facts_or_information"
+    col_name_from = "interesting_facts_or_information"
+    col_name_to = "identified_problems_or_needs"
     executer = Executer(file_name, col_name_from, col_name_to)
     in_encoder, out_encoder, assoc, input_tensor, output_tensor = executer.train(max_sentence_number=20, epochs=2000)
     sentence_lists = executer.get_sentence_lists()
-    ae = AttentionEvaluator(in_encoder, out_encoder, input_tensor, output_tensor, sentence_lists)
+    ae = AttentionEvaluator(in_encoder, out_encoder, input_tensor, output_tensor, sentence_lists, col_name_from, col_name_to)
     ae.evaluate()
     
         
