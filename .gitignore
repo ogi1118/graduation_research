@@ -13,6 +13,7 @@ __pycache__/
 *.pickle
 *.tsv
 *.txt
+!requirements.txt
 
 # 図・画像・スライドなど（再生成可能 or レポート用途）
 *.png
