@@ -172,15 +172,14 @@ class Visualizer:
 
 
 if __name__ == "__main__":
-    # file_name = "/home/masaomi/venv/source/gpbl_log/gpbl_log/dataset20240126.csv"
-    file_name = "/home/masaomi/gpbl_log/sources/gpbl_log/dataset20240126.csv"
-    col_name_from = "curiosity"
-    col_name_to = "interesting_facts_or_information"
+    file_name = "/home/al22091/graduation_research/dataset20240126.csv"
+    col_name_from = "interesting_facts_or_information"
+    col_name_to = "identified_problems_or_needs"
     executer = Executer(file_name, col_name_from, col_name_to)
     in_encoder, out_encoder, assoc, input_tensor, output_tensor, input_padding_flags, output_padding_flags = executer.train(max_sentence_number=20, epochs=1000)
     sentence_lists = executer.get_sentence_lists()
     ae = AttentionEvaluator(in_encoder, out_encoder, input_tensor, output_tensor, sentence_lists, device=executer.which_device())
-    output_file_name = "/home/masaomi/gpbl_log/sources/gpbl_log/output_dataset20240126.csv"
+    output_file_name = "./outputs/[" + col_name_from + "]2[" + col_name_to + "].csv"
     attention_value_lists = ae.evaluate(output_file_name)
     vis = Visualizer(input_tensor, output_tensor, input_padding_flags, output_padding_flags, sentence_lists, attention_value_lists, device=executer.which_device())
     #vis.get_clusters(0.5, 3)
