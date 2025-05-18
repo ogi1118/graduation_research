@@ -51,7 +51,7 @@ class AttentionEvaluator:
         return result
 
 if __name__ == "__main__":
-    file_name = "/home/masaomi/gpbl_log/sources/gpbl_log/dataset20240126.csv"
+    file_name = "/home/al22091/graduation_research/dataset20240126.csv"
     col_name_from = "curiosity"
     col_name_to = "interesting_facts_or_information"
     executer = Executer(file_name, col_name_from, col_name_to)
