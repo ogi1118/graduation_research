@@ -42,7 +42,7 @@ class SentenceFinder:
             doc_list.append(doc)
             max_sentence_num_list.append(max_sentence_num)
             doc_length_list.append(len(doc))
-        for i in range(min(doc_length_list)):
+        for i in range(min(doc_length_list)): #Rowの数が違う際のmin
             sg = SentenceGroup()
             for key, doc in zip(column_names, doc_list):
                 sg.set(key, doc[i])
