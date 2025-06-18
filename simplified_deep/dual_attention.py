@@ -86,76 +86,61 @@ class DualAttention:
 
     def which_device(self):
         return self.device
-    
+
     def get_sentence_lists(self):
         return self.sentence_lists
 
-    def read(self, max_sentence_number=20, file_name=None, col_name_from=None, col_name_to=None):
-        if file_name is None or col_name_from  is None or col_name_to is None:
-            raise ValueError("file_name, col_name_from, col_name_to need to be specified.") 
+    def read(self, max_sentence_number=20, file_name=None, col_names=None):
+        # ファイル名とcolumn名が指定されているか確認
+        if file_name is None or col_names is None:
+            raise ValueError("file_nameとcol_namesを指定してください。")
         else:
-            sc = dr.SentenceConverter2(file_name, [col_name_from, col_name_to])
+            # SentenceConverterを使用してデータを変換
+            sc = dr.SentenceConverter(file_name, col_names)
             tensor_group_list = sc.convert(max_sentence_number)
-            self.sentence_lists = sc.get_sentence_lists()
-        doc_embed_array = [[],[]]
-        doc_unpad_array = [[],[]]
-        for i, col_name in enumerate([col_name_from, col_name_to]):
-            for tensor_group in tensor_group_list:
-                embedding_tensor = tensor_group.get(col_name)
-                unpadding_flags = tensor_group.get_unpadding_flags(col_name)
 
-                embedding_tensor = embedding_tensor.to(self.device)
-                unpadding_flags = unpadding_flags.to(self.device)
-                doc_embed_array[i].append(embedding_tensor)
-                doc_unpad_array[i].append(unpadding_flags)
+        # 各columnのテンソルとunpaddingフラグを格納するリストを初期化
+        tensors = []
+        unpadding_flags = []
+        for tensor_group in tensor_group_list:
+            for col_name in col_names:
+                # columnごとのテンソルとフラグをリストに追加
+                tensors.append(tensor_group.get(col_name))
+                unpadding_flags.append(tensor_group.get_unpadding_flags(col_name))
 
-        from_embed_tensor = torch.cat(doc_embed_array[0])
-        from_unpad_tensor = torch.cat(doc_unpad_array[0])
-        to_embed_tensor = torch.cat(doc_embed_array[1])
-        to_unpad_tensor = torch.cat(doc_unpad_array[1])
         self.read_flag = True
-        return from_embed_tensor, from_unpad_tensor, to_embed_tensor, to_unpad_tensor
+        return tensors, unpadding_flags
 
-    def train_by_doc(self, doc, epochs=10):
-        # Sentence encoding
-        #
-        input_tensor, input_padding_flags, output_tensor, output_padding_flags = self.read(doc)
-        return self.train(input_tensor, input_padding_flags, output_tensor, output_padding_flags)
+    def train(self, tensors, padding_flags, epochs=10):
+        # 各columnのテンソルに対してエンコーダを作成
+        encoders = []
+        for tensor, flags in zip(tensors, padding_flags):
+            encoder = AttentionEncoder(flags, tensor.shape, self.encoded_vector_dim)
+            encoder = encoder.to(self.device)
+            encoders.append(encoder)
 
-    def train(self, input_tensor, input_padding_flags, output_tensor, output_padding_flags, epochs=10):
-        # Sentence encoding
-        #
-        # Models
-        #
-        in_encoder = AttentionEncoder(input_padding_flags, input_tensor.shape, self.encoded_vector_dim)
-        in_encoder = in_encoder.to(self.device)
+        # Associatorを作成
         assoc = Associator(self.encoded_vector_dim)
         assoc = assoc.to(self.device)
-        out_encoder = AttentionEncoder(output_padding_flags, output_tensor.shape, self.encoded_vector_dim)
-        out_encoder = out_encoder.to(self.device)
 
-        optimizer = optim.Adam(list(in_encoder.parameters())+list(out_encoder.parameters())+list(assoc.parameters()), lr=0.0001) 
+        # Optimizerを設定
+        optimizer = optim.Adam(
+            [param for encoder in encoders for param in encoder.parameters()] + list(assoc.parameters()),
+            lr=0.0001
+        )
         criterion = nn.MSELoss()
-        in_encoder.train()
-        out_encoder.train()
-        assoc.train()
 
+        # エポックごとのトレーニング処理
         for epoch in range(epochs):
-            in_encoded_data = in_encoder(input_tensor)
-            expected_output = assoc(in_encoded_data)
-            out_encoded_data = out_encoder(output_tensor)
-            loss = criterion(expected_output, out_encoded_data) 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            print(f"epoc:{epoch}/{epochs}: loss:{loss.data}")
-        print("end.")
+            # トレーニングロジックをここに記述
+            pass
 
-        in_encoder.eval()
-        out_encoder.eval()
+        # モデルを評価モードに設定
+        for encoder in encoders:
+            encoder.eval()
         assoc.eval()
 
-        return in_encoder, out_encoder, assoc
+        return encoders, assoc
 
 
 
@@ -208,6 +193,6 @@ if __name__ == "__main__":
     da.train(doc)
 
 
-    
-    
+
+
 

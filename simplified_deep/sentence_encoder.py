@@ -11,6 +11,7 @@ class SentenceEncoder:
         self.bert = BertLoader(device)
         
     def encode(self, texts):
+        # テキストをBERTモデルでエンコードし、CLSトークンを取得
         cls = self.bert.get_CLS(texts)
         return cls
 
@@ -31,18 +32,24 @@ class SentenceEncoder:
         return embedding_vectors, unpadding_flags
 
     def encode_sentences(self, sentence_group_list, max_sentence_number=4):
+        # SentenceGroupListをテンソルに変換するリストを初期化
         tensor_group_list = []
         column_names = sentence_group_list.get_column_names()
 
         for sentence_group in sentence_group_list.get_all():
+            # 各rowのSentenceGroupを取得
             sentence_dict = sentence_group.get_sentences_dict()
             tensor_group = TensorGroup(sentence_dict)
             for column_name in column_names:
+                # columnごとのテキストを取得
                 texts = sentence_group.get(column_name)
-                flags = [1 if i<len(texts) else 0 for i in range(max_sentence_number)]
+                # テキストの長さに基づいてフラグを作成
+                flags = [1 if i < len(texts) else 0 for i in range(max_sentence_number)]
+                # BERTモデルでエンコードし、CLSトークンを取得
                 cls = self.bert.get_CLS(texts, flags)
                 cls = cls.unsqueeze(dim=0)
-                tensor_group.set(column_name,cls)
+                # テンソルとフラグをTensorGroupに設定
+                tensor_group.set(column_name, cls)
                 tensor_group.set_unpadding_flags(column_name, torch.tensor(flags).unsqueeze(dim=0))
             tensor_group_list.append(tensor_group)
         return tensor_group_list
