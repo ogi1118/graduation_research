@@ -22,13 +22,13 @@ class Attention(nn.Module):
         self.one_flags = flag_tensor
         self.zero_flags = torch.ones_like(flag_tensor) - flag_tensor
 
-
     def forward(self, x):
-        x = x.flatten(-2,-1)
+        x = x.flatten(-2, -1)
         x = self.act_func(self.fc1(x))
         x = self.act_func(self.fc2(x))
         x = self.act_func(self.fc3(x))
-        x = self.one_flags * self.act_func(self.fc4(x)) + self.zero_flags * (-50.0)
+        x = self.one_flags * \
+            self.act_func(self.fc4(x)) + self.zero_flags * (-50.0)
         x = self.soft_max(x)
         return x
 
@@ -44,7 +44,8 @@ class AttentionEncoder(nn.Module):
         self.fc3 = nn.Linear(hidden_dim, hidden_dim)
         self.fc4 = nn.Linear(hidden_dim, output_dim)
         self.act_func = nn.ReLU()
-        self.attention = Attention(flag_tensor, input_shape, hidden_dim=hidden_dim)
+        self.attention = Attention(
+            flag_tensor, input_shape, hidden_dim=hidden_dim)
 
     def forward(self, x):
         alpha = self.attention(x).unsqueeze(-2)
@@ -53,7 +54,7 @@ class AttentionEncoder(nn.Module):
         x = self.act_func(self.fc3(x))
         x = torch.bmm(alpha, self.fc4(x)).squeeze(-2)
         return x
-    
+
     def get_attention(self, x):
         return self.attention(x)
 
@@ -86,19 +87,20 @@ class DualAttention:
 
     def which_device(self):
         return self.device
-    
+
     def get_sentence_lists(self):
         return self.sentence_lists
 
     def read(self, max_sentence_number=20, file_name=None, col_name_from=None, col_name_to=None):
-        if file_name is None or col_name_from  is None or col_name_to is None:
-            raise ValueError("file_name, col_name_from, col_name_to need to be specified.") 
+        if file_name is None or col_name_from is None or col_name_to is None:
+            raise ValueError(
+                "file_name, col_name_from, col_name_to need to be specified.")
         else:
             sc = dr.SentenceConverter2(file_name, [col_name_from, col_name_to])
             tensor_group_list = sc.convert(max_sentence_number)
             self.sentence_lists = sc.get_sentence_lists()
-        doc_embed_array = [[],[]]
-        doc_unpad_array = [[],[]]
+        doc_embed_array = [[], []]
+        doc_unpad_array = [[], []]
         for i, col_name in enumerate([col_name_from, col_name_to]):
             for tensor_group in tensor_group_list:
                 embedding_tensor = tensor_group.get(col_name)
@@ -119,7 +121,8 @@ class DualAttention:
     def train_by_doc(self, doc, epochs=10):
         # Sentence encoding
         #
-        input_tensor, input_padding_flags, output_tensor, output_padding_flags = self.read(doc)
+        input_tensor, input_padding_flags, output_tensor, output_padding_flags = self.read(
+            doc)
         return self.train(input_tensor, input_padding_flags, output_tensor, output_padding_flags)
 
     def train(self, input_tensor, input_padding_flags, output_tensor, output_padding_flags, epochs=10):
@@ -127,14 +130,17 @@ class DualAttention:
         #
         # Models
         #
-        in_encoder = AttentionEncoder(input_padding_flags, input_tensor.shape, self.encoded_vector_dim)
+        in_encoder = AttentionEncoder(
+            input_padding_flags, input_tensor.shape, self.encoded_vector_dim)
         in_encoder = in_encoder.to(self.device)
         assoc = Associator(self.encoded_vector_dim)
         assoc = assoc.to(self.device)
-        out_encoder = AttentionEncoder(output_padding_flags, output_tensor.shape, self.encoded_vector_dim)
+        out_encoder = AttentionEncoder(
+            output_padding_flags, output_tensor.shape, self.encoded_vector_dim)
         out_encoder = out_encoder.to(self.device)
 
-        optimizer = optim.Adam(list(in_encoder.parameters())+list(out_encoder.parameters())+list(assoc.parameters()), lr=0.0001) 
+        optimizer = optim.Adam(list(in_encoder.parameters(
+        ))+list(out_encoder.parameters())+list(assoc.parameters()), lr=0.0001)
         criterion = nn.MSELoss()
         in_encoder.train()
         out_encoder.train()
@@ -144,7 +150,7 @@ class DualAttention:
             in_encoded_data = in_encoder(input_tensor)
             expected_output = assoc(in_encoded_data)
             out_encoded_data = out_encoder(output_tensor)
-            loss = criterion(expected_output, out_encoded_data) 
+            loss = criterion(expected_output, out_encoded_data)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -156,7 +162,6 @@ class DualAttention:
         assoc.eval()
 
         return in_encoder, out_encoder, assoc
-
 
 
 if __name__ == "__main__":
@@ -171,7 +176,7 @@ if __name__ == "__main__":
             [
                 "At FlexiRoam, we value flexibility as much as you do.",
                 "That's why our eSIM plans are designed to adapt to your travel needs, giving you the freedom to roam wherever."
-            ], 
+            ],
         ],
         [
             [
@@ -182,12 +187,11 @@ if __name__ == "__main__":
             [
                 "At FlexiRoam, we value flexibility as much as you do.",
                 "That's why our eSIM plans are designed to adapt to your travel needs, giving you the freedom to roam wherever."
-            ], 
+            ],
         ]
     ]
 
-
-    encoded_vector_dim = 20 
+    encoded_vector_dim = 20
     da = DualAttention(encoded_vector_dim)
     # input_tensor, input_padding_flags, output_tensor, output_padding_flags = da.read(doc)
 
@@ -206,8 +210,3 @@ if __name__ == "__main__":
     # print(expected_out)
     # print(out_encoded_data)
     da.train(doc)
-
-
-    
-    
-
