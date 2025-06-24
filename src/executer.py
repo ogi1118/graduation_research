@@ -1,4 +1,6 @@
 import csv
+import os
+import json
 from collections import Counter
 from networkx.algorithms import bipartite
 import networkx as nx
@@ -79,7 +81,7 @@ class AttentionEvaluator:
 
 
 class Visualizer:
-    def __init__(self, input_tensor, output_tensor, input_padding_flags, output_padding_flags, sentence_lists, attention_value_lists, device=torch.device("cpu")) -> None:
+    def __init__(self, input_tensor, output_tensor, input_padding_flags, output_padding_flags, sentence_lists, attention_value_lists, device=torch.device("cpu"), col_name_from=None, col_name_to=None) -> None:
         self.input_tensor = input_tensor
         self.output_tensor = output_tensor
         self.input_padding_flags = input_padding_flags
@@ -87,6 +89,8 @@ class Visualizer:
         self.sentence_lists = sentence_lists
         self.attention_value_lists = attention_value_lists
         self.device = device
+        self.col_name_from = col_name_from
+        self.col_name_to = col_name_to
 
     def get_clusters(self, eps, min_samples):
         array_list = [[], []]
@@ -122,15 +126,16 @@ class Visualizer:
             sentences_list.append(sentences)
             cluster_num_list.append(list(pred))
             cluster_id_max_list.append(np.max(pred))
-            for sentence, cluster in zip(sentences, pred):
-                print(sentence+" :> "+str(i)+":"+str(cluster))
+            # for sentence, cluster in zip(sentences, pred):
+            # print(sentence+" :> "+str(i)+":"+str(cluster))
             plt.title('Column-{}'.format(str(i)))
             plt.scatter(
                 projected_data_2d[:, 0], projected_data_2d[:, 1], c=pred, alpha=0.9)
             plt.colorbar()
-            plt.savefig('../outputs/Column-{}.png'.format(str(i)))
+            plt.savefig('../outputs/graphs/[{}]2[{}]-column-{}.png'.format(
+                self.col_name_from, self.col_name_to, str(i)))
             plt.clf()
-        with open("sentence_file.csv", "w") as f:
+        with open("../outputs/csvs/[{}]2[{}]-sentence_file.csv".format(self.col_name_from, self.col_name_to), "w") as f:
             writer = csv.writer(f)
             for sentence_from, cluster_from, sentence_to, cluster_to in zip(sentences_list[0], cluster_num_list[0], sentences_list[1], cluster_num_list[1]):
                 writer.writerow([cluster_from, sentence_from,
@@ -149,52 +154,96 @@ class Visualizer:
             data_list.append(np.expand_dims(att_emb, axis=0))
             sentences.append(sentence[attention.argmax()])
         desc_embedding_data = np.concatenate(data_list, axis=0)
-        print("# of sentences({}): {}".format(i, len(sentences)))
+        # print("# of sentences({}): {}".format(i, len(sentences)))
         return sentences, desc_embedding_data
 
     def get_bigraph(self, eps, min_samples):
+        # 1) クラスタ情報取得
+        cluster_num_list, _, cluster_id_max_list = self.get_clusters(
+            eps, min_samples)
+
+        # 2) グラフ作成
+        G = nx.Graph()
+        col_names = [self.col_name_from, self.col_name_to]
+
+        # 3) ノード追加（列名:クラスタID の形式）
+        for idx, col in enumerate(col_names):
+            for cid in range(-1, cluster_id_max_list[idx] + 1):
+                G.add_node(f"{col}:{cid}", bipartite=idx)
+
+        # 4) エッジ集計
+        edge_counter = Counter()
+        for f, t in zip(cluster_num_list[0], cluster_num_list[1]):
+            node_f = f"{self.col_name_from}:{f}"
+            node_t = f"{self.col_name_to}:{t}"
+            edge_counter[(node_f, node_t)] += 1
+
+        # 5) エッジ追加
+        for (node_f, node_t), weight in edge_counter.items():
+            G.add_edge(node_f, node_t, weight=weight)
+
+        # 6) 初期位置設定 (x 座標は 0 or 1, y はクラスタID)
+        pos = {}
+        for idx, col in enumerate(col_names):
+            for cid in range(-1, cluster_id_max_list[idx] + 1):
+                pos[f"{col}:{cid}"] = (idx, cid)
+
+        # 7) Spring レイアウトで y 座標のみ微調整
+        spring_pos = nx.spring_layout(G, weight="weight", seed=4)
+        for node, (x0, _) in pos.items():
+            pos[node] = (x0, spring_pos[node][1])
+
+        # 8) 描画パラメータ準備
+        weights = [G[u][v]["weight"] for u, v in G.edges()]
+        degrees = [G.degree(n, weight="weight") for n in G.nodes()]
+        sizes = [500 * deg for deg in degrees]
+
+        # 9) 描画
+        nx.draw(
+            G,
+            pos,
+            with_labels=True,
+            node_size=sizes,
+            width=weights,
+            node_color="red",
+            alpha=0.3,
+        )
+        plt.savefig(
+            f"../outputs/graphs/[{self.col_name_from}]2[{self.col_name_to}]-bigraph.png"
+        )
+        plt.show()
+
+    def save_cluster_info(self, eps, min_samples):
         cluster_num_list, sentences_list, cluster_id_max_list = self.get_clusters(
             eps, min_samples)
-        bigraph_net = nx.Graph()
-        edge_list = []
-        alt_edge_list = []
-        for l, r in zip(cluster_num_list[0], cluster_num_list[1]):
-            edge_list.append(("0:" + str(l), "1:" + str(r)))
-            alt_edge_list.append("0:" + str(l) + "/" + "1:" + str(r))
-        edge_counter = Counter(alt_edge_list)
-        pos = dict()
-        for k in range(2):
-            bigraph_net.add_nodes_from(
-                [str(k) + ":" + str(i) for i in range(-1, cluster_id_max_list[k] + 1)], bipartite=k)
-            pos.update((str(k) + ":" + str(i), (k + 1, i))
-                       for i in range(-1, cluster_id_max_list[k] + 1))
-        for edge in list(set(edge_list)):
-            alt_edge = edge[0] + "/" + edge[1]
-            bigraph_net.add_edge(
-                edge[0], edge[1], weight=edge_counter[alt_edge])
-        edge_weights = [bigraph_net[u][v]["weight"]
-                        for u, v in bigraph_net.edges]
-        mag = 500
-        node_degree = [
-            mag * bigraph_net.degree(weight="weight")[i] for i in bigraph_net.nodes]
-        pos_spring = nx.spring_layout(bigraph_net, weight="weight", seed=4)
-        for k in range(2):
-            pos.update((str(k) + ":" + str(i), (k + 1, pos_spring[str(k) + ":" + str(
-                i)][1])) for i in range(-1, cluster_id_max_list[k] + 1))
-        nx.draw(bigraph_net, pos, node_color="red", alpha=0.3,
-                with_labels=True, node_size=node_degree, width=edge_weights)
-        plt.savefig("bigraph.png")
-        plt.show()
+
+        print("col_name_from: {}, col_name_to: {}".format(
+            self.col_name_from, self.col_name_to))
+        print("cluster_num_list: {}".format(cluster_num_list))
+        print("sentences_list: {}".format(sentences_list))
+        print("cluster_id_max_list: {}".format(cluster_id_max_list))
+
+        data = {
+            "col_pair": [col_name_from, col_name_to],
+            "clusters": [list(map(int, cluster_num_list[0])),
+                         list(map(int, cluster_num_list[1]))],
+            "sentences": sentences_list,
+            "cluster_max": [int(cluster_id_max_list[0]), int(cluster_id_max_list[1])],
+        }
+        with open("../tmp/cluster_info_{}_{}.json".format(col_name_from, col_name_to), "w") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
 
 
 if __name__ == "__main__":
     file_name = "/home/al22091/graduation_research/dataset20240126.csv"
     col_names = ["curiosity", "interesting_facts_or_information",
                  "identified_problems_or_needs"]
-    for i in range(len(col_names)-1):
-        for j in range(i+1, len(col_names)):
-            if i < j:
-                continue
+    os.makedirs("../outputs", exist_ok=True)
+    os.makedirs("../tmp", exist_ok=True)
+    os.makedirs("../outputs/graphs", exist_ok=True)
+    os.makedirs("../outputs/csvs", exist_ok=True)
+    for i in range(len(col_names) - 1):
+        j = i + 1
         col_name_from = col_names[i]
         col_name_to = col_names[j]
         print("col_name_from: {}, col_name_to: {}".format(
@@ -205,12 +254,13 @@ if __name__ == "__main__":
         sentence_lists = executer.get_sentence_lists()
         ae = AttentionEvaluator(in_encoder, out_encoder, input_tensor,
                                 output_tensor, sentence_lists, device=executer.which_device())
-        output_file_name = "../outputs/[" + \
+        output_file_name = "../outputs/csvs/[" + \
             col_name_from + "]2[" + col_name_to + "].csv"
         attention_value_lists = ae.evaluate(output_file_name)
 
         vis = Visualizer(input_tensor, output_tensor, input_padding_flags, output_padding_flags,
-                         sentence_lists, attention_value_lists, device=executer.which_device())
+                         sentence_lists, attention_value_lists, device=executer.which_device(), col_name_from=col_name_from, col_name_to=col_name_to)
+        vis.save_cluster_info(eps=0.7, min_samples=3)
         vis.get_bigraph(0.7, 3)
     # -------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     # executer = Executer(file_name, col_name_from, col_name_to)
