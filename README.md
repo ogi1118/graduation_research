@@ -33,4 +33,3 @@ pip install -r requirements.txt
 python src/executer.py
 ```
 
-テスト1
