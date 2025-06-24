@@ -7,12 +7,16 @@
 ## 🔧 ディレクトリ構成
 
 ```yaml
-.
-├── deep/ 
-├── simplified_deep/ 
-├── dataset20240126.csv # 入力データ
-├── others
-└── requirements.txt # 使用パッケージ一覧
+├── .gitignore
+├── README.md
+├── requirements.txt
+└── src
+    ├── bert_model_loader.py
+    ├── data_reader.py
+    ├── dual_attention.py
+    ├── executer.py
+    ├── sentence_encoder.py
+    └── sentence_group.py
 ```
 ---
 ## 🚀 実行方法
@@ -26,5 +30,5 @@ pip install -r requirements.txt
 ```
 ### 実行
 ```bash
-python simplified_deep/executer.py
+python src/executer.py
 ```
