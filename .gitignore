@@ -9,11 +9,13 @@ __pycache__/
 
 # 大容量データファイル（出力・中間処理結果など）
 *.csv
+*.json
 *.xlsx
 *.pickle
 *.tsv
 *.txt
 !requirements.txt
+!template_config.json
 
 # 図・画像・スライドなど（再生成可能 or レポート用途）
 *.png
