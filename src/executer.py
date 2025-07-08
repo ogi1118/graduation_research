@@ -108,13 +108,3 @@ if __name__ == "__main__":
     cluster_infos = CombinedVisualizer.load_cluster_infos()
     CombinedVisualizer.draw_combined_bigraph(cluster_infos)
 
-    # -------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-    # executer = Executer(file_name, col_name_from, col_name_to)
-    # in_encoder, out_encoder, assoc, input_tensor, output_tensor, input_padding_flags, output_padding_flags = executer.train(max_sentence_number=20, epochs=1000)
-    # sentence_lists = executer.get_sentence_lists()
-    # ae = AttentionEvaluator(in_encoder, out_encoder, input_tensor, output_tensor, sentence_lists, device=executer.which_device())
-    # output_file_name = "./outputs/[" + col_name_from + "]2[" + col_name_to + "].csv"
-    # attention_value_lists = ae.evaluate(output_file_name)
-    # vis = Visualizer(input_tensor, output_tensor, input_padding_flags, output_padding_flags, sentence_lists, attention_value_lists, device=executer.which_device())
-    # #vis.get_clusters(0.5, 3)
-    # vis.get_bigraph(0.7, 3) #0.5, 3
