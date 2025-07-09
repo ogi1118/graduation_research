@@ -16,7 +16,7 @@ class SentenceFinder:
         doc = []
         max_sentence_num = -1
         for row in self.df[column_name]:
-            sentences = self.spacy_model(row).sents
+            sentences = self.spacy_model(str(row)).sents
             sentence_list = [s.text for s in sentences]  # list(sentences)
             doc.append(sentence_list)
             sentence_num = len(sentence_list)
