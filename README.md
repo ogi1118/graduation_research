@@ -33,3 +33,5 @@ pip install -r requirements.txt
 python src/executer.py
 ```
 
+### 実行結果
+![](./outputs/graphs/combined_bigraph.png)
