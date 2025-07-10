@@ -17,13 +17,13 @@ COL_NAMES = config['col_names']
 TMP_DIR = config['tmp_dir']
 OUTPUTS_GRAPHS_DIR = config['outputs_graphs_dir']
 OUTPUTS_CSVS_DIR = config['outputs_csvs_dir']
+EMB_DIR = config['embeddings_dir']
 
 # KeyBERT モデル初期化（1回だけ）
 _kw_model = KeyBERT(model='all-MiniLM-L6-v2')
 
 
 def _to_numpy(tensor):
-    # Tensor かつ CUDA の場合とそうでない場合
     if hasattr(tensor, 'cpu'):
         return tensor.cpu().detach().numpy()
     else:
@@ -43,6 +43,27 @@ class Visualizer:
         self.device = device
         self.col_name_from = col_name_from
         self.col_name_to = col_name_to
+        # 埋め込みベクトルおよびAttention/Maskをバイナリ保存
+        stage_dir = os.path.join(EMB_DIR, f"{col_name_from}_{col_name_to}")
+        os.makedirs(stage_dir, exist_ok=True)
+        inp = _to_numpy(self.input_tensor)
+        out = _to_numpy(self.output_tensor)
+        # attention と mask
+        att_in = _to_numpy(self.attention_value_lists[0])
+        att_out = _to_numpy(self.attention_value_lists[1])
+        mask_in = _to_numpy(self.input_padding_flags)
+        mask_out = _to_numpy(self.output_padding_flags)
+        # サンプルID
+        ids = list(range(inp.shape[0]))
+        # 保存
+        np.save(os.path.join(stage_dir, 'input_embeddings.npy'), inp)
+        np.save(os.path.join(stage_dir, 'output_embeddings.npy'), out)
+        np.save(os.path.join(stage_dir, 'input_attention.npy'), att_in)
+        np.save(os.path.join(stage_dir, 'output_attention.npy'), att_out)
+        np.save(os.path.join(stage_dir, 'input_mask.npy'), mask_in)
+        np.save(os.path.join(stage_dir, 'output_mask.npy'), mask_out)
+        with open(os.path.join(stage_dir, 'sample_ids.json'), 'w', encoding='utf-8') as f:
+            json.dump(ids, f, ensure_ascii=False)
 
     def get_clusters(self, eps, min_samples):
         inp = _to_numpy(self.input_tensor)
@@ -67,12 +88,13 @@ class Visualizer:
                 sent_keys.append(sents[i][weight.argmax()])
             X = np.stack(emb_list)
             sentences_list.append(sent_keys)
+            # UMAP + DBSCAN でクラスタリング
             red = UMAP(n_neighbors=3, init='random',
                        random_state=0).fit_transform(X)
             labels = DBSCAN(eps=eps, min_samples=min_samples).fit_predict(red)
             cluster_nums.append(labels.tolist())
             cluster_maxs.append(int(labels.max()))
-            # 列ごとの散布図出力
+            # 列ごとの散布図出力(従来処理)
             plt.figure()
             plt.scatter(red[:, 0], red[:, 1], c=labels, alpha=0.8)
             plt.colorbar()
@@ -125,79 +147,146 @@ class CombinedVisualizer:
         return infos
 
     @staticmethod
-    def draw_combined_bigraph(cluster_infos):
+    def merge_and_recluster(eps, min_samples):
+        n_pairs = len(COL_NAMES) - 1
+        pair_data = []
+        for idx in range(n_pairs):
+            cf = COL_NAMES[idx]
+            ct = COL_NAMES[idx + 1]
+            stage_dir = os.path.join(EMB_DIR, f"{cf}_{ct}")
+            # 3D埋め込み・Attention・Maskをロード
+            # [n_samples, n_sentences, dim]
+            inp_3d = np.load(os.path.join(stage_dir, 'input_embeddings.npy'))
+            # [n_samples, n_sentences]
+            att_in = np.load(os.path.join(stage_dir, 'input_attention.npy'))
+            # [n_samples, n_sentences]
+            mask_in = np.load(os.path.join(stage_dir, 'input_mask.npy'))
+            # [n_samples, n_sentences, dim]
+            out_3d = np.load(os.path.join(stage_dir, 'output_embeddings.npy'))
+            # [n_samples, n_sentences]
+            att_out = np.load(os.path.join(stage_dir, 'output_attention.npy'))
+            # [n_samples, n_sentences]
+            mask_out = np.load(os.path.join(stage_dir, 'output_mask.npy'))
+            # Attention重み付き和で2D埋め込み化
+            inp_emb = np.einsum('ij, ijk -> ik', mask_in * att_in, inp_3d)
+            out_emb = np.einsum('ij, ijk -> ik', mask_out * att_out, out_3d)
+            # 代表文候補ロード
+            with open(os.path.join(TMP_DIR, f"cluster_info_{idx}_{idx+1}.json"), 'r', encoding='utf-8') as f:
+                info = json.load(f)
+            s_in = info['sentences'][0]
+            s_out = info['sentences'][1]
+            pair_data.append({
+                'in_emb': inp_emb, 'out_emb': out_emb,
+                'in_sent': s_in, 'out_sent': s_out
+            })
+        # ステージリスト構築
+        stages = []
+        # 第1ステージ（only in）
+        stages.append({
+            'emb': pair_data[0]['in_emb'],
+            'sent': pair_data[0]['in_sent'],
+            'col': COL_NAMES[0]
+        })
+        # 中間ステージ（merge + 代表文候補）
+        for i in range(1, n_pairs):
+            prev = pair_data[i-1]
+            curr = pair_data[i]
+            merged_emb = (prev['out_emb'] + curr['in_emb']
+                          ) / 2  # [n_samples, dim]
+            # [n_samples, 2, dim]
+            cand_emb = np.stack([prev['out_emb'], curr['in_emb']], axis=1)
+            cand_sent = list(zip(prev['out_sent'], curr['in_sent']))
+            stages.append({
+                'emb': merged_emb,
+                'cand_emb': cand_emb,
+                'cand_sent': cand_sent,
+                'col': COL_NAMES[i]
+            })
+        # 最終ステージ（only out）
+        stages.append({
+            'emb': pair_data[-1]['out_emb'],
+            'sent': pair_data[-1]['out_sent'],
+            'col': COL_NAMES[-1]
+        })
+
+        merged_infos = []
+        # 再クラスタリング & 代表文選定 & トピック抽出
+        for stage_idx, st in enumerate(stages):
+            X = st['emb']  # [n_samples, dim]
+            col = st['col']
+            # UMAP→DBSCAN
+            red = UMAP(n_neighbors=3, init='random',
+                       random_state=0).fit_transform(X)
+            labels = DBSCAN(eps=eps, min_samples=min_samples).fit_predict(red)
+            # 代表文選定
+            if 'cand_emb' in st:
+                centers = {}
+                for cid in np.unique(labels):
+                    idxs = np.where(labels == cid)[0]
+                    centers[cid] = X[idxs].mean(axis=0)
+                sentences = []
+                for j, cid in enumerate(labels):
+                    c_emb = centers[cid]
+                    cands = st['cand_emb'][j]  # [2, dim]
+                    sims = (cands @ c_emb) / (
+                        np.linalg.norm(cands, axis=1) * np.linalg.norm(c_emb) + 1e-12)
+                    best = sims.argmax()
+                    sentences.append(st['cand_sent'][j][best])
+            else:
+                sentences = st['sent']
+            # KeyBERTトピック抽出
+            docs_by_cluster = defaultdict(list)
+            for cid, s in zip(labels.tolist(), sentences):
+                docs_by_cluster[cid].append(s)
+            topics = {}
+            for cid, docs in docs_by_cluster.items():
+                combined = '。'.join(docs)
+                kws = _kw_model.extract_keywords(
+                    combined, keyphrase_ngram_range=(1, 2),
+                    stop_words='english', use_mmr=True, top_n=3
+                )
+                topics[cid] = [kw[0] for kw in kws]
+            merged_infos.append({
+                'col': col,
+                'clusters': labels.tolist(),
+                'topics': topics
+            })
+        return merged_infos
+
+    @staticmethod
+    def draw_merged_bigraph(merged_infos):
         fig, ax = plt.subplots(figsize=(16, 8))
         G = nx.Graph()
         pos, edge_w, labels = {}, Counter(), {}
-
-        # 各ステージの内部エッジノード定義
-        for stage, info in enumerate(cluster_infos):
-            cf, ct = info['col_pair']
-            cl_f, cl_t = info['clusters']
-            topics = info.get('topics', {})
-            for f_id, t_id in zip(cl_f, cl_t):
-                u = f"{cf}:{f_id}:p{stage}:l"
-                v = f"{ct}:{t_id}:p{stage}:r"
-                G.add_node(u)
-                G.add_node(v)
-                # ラベル折返し
-                txt_f = '\n'.join(topics.get(cf, {}).get(
-                    str(f_id), [])) or f"{cf}:{f_id}"
-                txt_t = '\n'.join(topics.get(ct, {}).get(
-                    str(t_id), [])) or f"{ct}:{t_id}"
-                labels[u] = txt_f
-                labels[v] = txt_t
+        # ノード生成
+        for stage, info in enumerate(merged_infos):
+            col = info['col']
+            clusters = info['clusters']
+            topics = info['topics']
+            for sample_idx, cid in enumerate(clusters):
+                node = f"{col}:{cid}:p{stage}"
+                G.add_node(node)
+                labels[node] = '\n'.join(topics.get(cid, [])) or f"{col}:{cid}"
+                pos[node] = (stage, sample_idx)
+        # エッジ生成: サンプルIDで繋ぐ
+        n_samples = len(merged_infos[0]['clusters'])
+        for sample in range(n_samples):
+            for stage in range(len(merged_infos) - 1):
+                cid1 = merged_infos[stage]['clusters'][sample]
+                cid2 = merged_infos[stage+1]['clusters'][sample]
+                u = f"{merged_infos[stage]['col']}:{cid1}:p{stage}"
+                v = f"{merged_infos[stage+1]['col']}:{cid2}:p{stage+1}"
                 edge_w[(u, v)] += 1
-                # 仮 Y 値
-                pos[u] = (stage * 2, 0)
-                pos[v] = (stage * 2 + 1, 0)
-
-        # 内部エッジ追加
         for (u, v), w in edge_w.items():
             G.add_edge(u, v, weight=w)
-
-        # ステージ間クロスエッジ
-        cross_w = Counter()
-        for stage in range(len(cluster_infos) - 1):
-            curr = cluster_infos[stage]
-            nxt = cluster_infos[stage + 1]
-            col_mid = COL_NAMES[stage + 1]
-            n_samples = len(curr['clusters'][0])
-            for i in range(n_samples):
-                t_id = curr['clusters'][1][i]
-                f_next = nxt['clusters'][0][i]
-                u = f"{col_mid}:{t_id}:p{stage}:r"
-                v = f"{col_mid}:{f_next}:p{stage+1}:l"
-                cross_w[(u, v)] += 1
-        for (u, v), w in cross_w.items():
-            G.add_edge(u, v, weight=w)
-
-        # XごとY均等配置
-        x_groups = defaultdict(list)
-        for n, (x, _) in pos.items():
-            x_groups[x].append(n)
-        for x, nodes in x_groups.items():
-            N = len(nodes)
-            for i, n in enumerate(sorted(nodes)):
-                pos[n] = (x, i / (N - 1) if N > 1 else 0.5)
-
         # 描画
         weights = [G[u][v]['weight'] for u, v in G.edges()]
         sizes = [300 * G.degree(n, weight='weight') for n in G.nodes()]
-        nx.draw(G, pos, ax=ax, with_labels=False, node_size=sizes,
-                width=weights, node_color='tomato', alpha=0.6)
-        nx.draw_networkx_labels(G, pos, labels, font_size=8, ax=ax)
-
-        # 下部カラムペア表示
-        total = len(cluster_infos)
-        for i, info in enumerate(cluster_infos):
-            cf, ct = info['col_pair']
-            x_rel = (2 * i + 0.5) / (2 * total - 1)
-            ax.text(x_rel, -0.05, f"{cf}\n→\n{ct}",
-                    ha='center', va='top', transform=ax.transAxes)
-
-        os.makedirs(OUTPUTS_GRAPHS_DIR, exist_ok=True)
+        nx.draw(G, pos, ax=ax, with_labels=False, node_size=sizes, width=weights,
+                node_color='white', edgecolors='tomato', linewidths=1.5, alpha=0.9)
+        nx.draw_networkx_labels(G, pos, labels, font_size=8, font_color='black', bbox=dict(
+            facecolor='white', edgecolor='none', alpha=0.8), ax=ax)
         plt.tight_layout()
-        plt.savefig(os.path.join(OUTPUTS_GRAPHS_DIR, 'combined_bigraph.png'))
+        os.makedirs(OUTPUTS_GRAPHS_DIR, exist_ok=True)
+        plt.savefig(os.path.join(OUTPUTS_GRAPHS_DIR, 'merged_bigraph.png'))
         plt.show()
-        print('Saved combined graph to', OUTPUTS_GRAPHS_DIR)
