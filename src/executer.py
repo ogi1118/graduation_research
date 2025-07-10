@@ -1,11 +1,21 @@
+import torch
+import numpy as np
+import random
 import os
 from config_loader import config
 import json
 from dual_attention import DualAttention
 from visualizer import Visualizer, CombinedVisualizer
 import matplotlib
+from combined_visualizer_extensions import add_outlier_info
 matplotlib.use('Qt5Agg')
-# pip install umap-learn
+
+# SEED = 42
+# random.seed(SEED)
+# np.random.seed(SEED)
+# torch.manual_seed(SEED)
+# torch.cuda.manual_seed_all(SEED)
+# torch.backends.cudnn.deterministic = True
 
 
 class Executer:
@@ -108,5 +118,8 @@ if __name__ == "__main__":
     # cluster_infos = CombinedVisualizer.load_cluster_infos()
     merged_infos = CombinedVisualizer.merge_and_recluster(
         eps=0.7, min_samples=3)
+    merged_infos = add_outlier_info(
+        merged_infos, method="percentile", percentile=95, lof_n_neighbors=15, epsilon=1e-6)
+    print("merged_infos:", merged_infos)
 
-    CombinedVisualizer.draw_merged_bigraph(merged_infos)
+    CombinedVisualizer.draw_merged_graph(merged_infos)

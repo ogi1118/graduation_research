@@ -90,7 +90,7 @@ class Visualizer:
             sentences_list.append(sent_keys)
             # UMAP + DBSCAN でクラスタリング
             red = UMAP(n_neighbors=3, init='random',
-                       random_state=0).fit_transform(X)
+                       random_state=42).fit_transform(X)
             labels = DBSCAN(eps=eps, min_samples=min_samples).fit_predict(red)
             cluster_nums.append(labels.tolist())
             cluster_maxs.append(int(labels.max()))
@@ -216,7 +216,7 @@ class CombinedVisualizer:
             col = st['col']
             # UMAP→DBSCAN
             red = UMAP(n_neighbors=3, init='random',
-                       random_state=0).fit_transform(X)
+                       random_state=42).fit_transform(X)
             labels = DBSCAN(eps=eps, min_samples=min_samples).fit_predict(red)
             # 代表文選定
             if 'cand_emb' in st:
@@ -248,45 +248,85 @@ class CombinedVisualizer:
                 topics[cid] = [kw[0] for kw in kws]
             merged_infos.append({
                 'col': col,
+                'emb': X,
                 'clusters': labels.tolist(),
                 'topics': topics
             })
         return merged_infos
 
     @staticmethod
-    def draw_merged_bigraph(merged_infos):
+    def draw_merged_graph(merged_infos, node_size_factor=300, edge_width_factor=1.0):
+        """
+        merged_infos: List[Dict] with keys:
+        - 'col': str
+        - 'clusters': List[int]
+        - 'topics': Dict[int, List[str]]
+        - 'outlier_flags': List[bool]
+        node_size_factor: ノードサイズ倍率
+        edge_width_factor: エッジ太さ倍率
+        """
         fig, ax = plt.subplots(figsize=(16, 8))
         G = nx.Graph()
         pos, edge_w, labels = {}, Counter(), {}
+
         # ノード生成
         for stage, info in enumerate(merged_infos):
             col = info['col']
             clusters = info['clusters']
             topics = info['topics']
+            flags = info.get('outlier_flags', [False] * len(clusters))
             for sample_idx, cid in enumerate(clusters):
                 node = f"{col}:{cid}:p{stage}"
                 G.add_node(node)
+                # 色だけフラグで変える
+                G.nodes[node]['color'] = 'salmon' if flags[sample_idx] else 'white'
                 labels[node] = '\n'.join(topics.get(cid, [])) or f"{col}:{cid}"
                 pos[node] = (stage, sample_idx)
-        # エッジ生成: サンプルIDで繋ぐ
+
+        # エッジ生成: サンプルIDでノードを繋ぐ
         n_samples = len(merged_infos[0]['clusters'])
         for sample in range(n_samples):
             for stage in range(len(merged_infos) - 1):
                 cid1 = merged_infos[stage]['clusters'][sample]
-                cid2 = merged_infos[stage+1]['clusters'][sample]
+                cid2 = merged_infos[stage + 1]['clusters'][sample]
                 u = f"{merged_infos[stage]['col']}:{cid1}:p{stage}"
-                v = f"{merged_infos[stage+1]['col']}:{cid2}:p{stage+1}"
+                v = f"{merged_infos[stage + 1]['col']}:{cid2}:p{stage + 1}"
                 edge_w[(u, v)] += 1
+
+        # 辺追加
         for (u, v), w in edge_w.items():
             G.add_edge(u, v, weight=w)
-        # 描画
-        weights = [G[u][v]['weight'] for u, v in G.edges()]
-        sizes = [300 * G.degree(n, weight='weight') for n in G.nodes()]
-        nx.draw(G, pos, ax=ax, with_labels=False, node_size=sizes, width=weights,
-                node_color='white', edgecolors='tomato', linewidths=1.5, alpha=0.9)
-        nx.draw_networkx_labels(G, pos, labels, font_size=8, font_color='black', bbox=dict(
-            facecolor='white', edgecolor='none', alpha=0.8), ax=ax)
+
+        # ノードサイズとエッジ幅をデータ量に応じて設定
+        node_sizes = [node_size_factor *
+                      G.degree(n, weight='weight') for n in G.nodes()]
+        edge_widths = [edge_width_factor * G[u][v]['weight']
+                       for u, v in G.edges()]
+
+        # グラフ描画
+        nx.draw(
+            G,
+            pos,
+            ax=ax,
+            with_labels=False,
+            node_size=node_sizes,
+            node_color=[G.nodes[n]['color'] for n in G.nodes()],
+            width=edge_widths,
+            edgecolors='tomato',
+            edge_color='gray',
+            linewidths=0.5,
+            alpha=0.9
+        )
+        nx.draw_networkx_labels(
+            G,
+            pos,
+            labels,
+            font_size=8,
+            font_color='black',
+            # bbox=dict(facecolor='white', edgecolor='none', alpha=0.8),
+            ax=ax
+        )
         plt.tight_layout()
         os.makedirs(OUTPUTS_GRAPHS_DIR, exist_ok=True)
-        plt.savefig(os.path.join(OUTPUTS_GRAPHS_DIR, 'merged_bigraph.png'))
+        plt.savefig(os.path.join(OUTPUTS_GRAPHS_DIR, 'merged_graph.png'))
         plt.show()
