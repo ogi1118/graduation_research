@@ -43,20 +43,40 @@ class OutlierDetector:
         return medoids, ssws
 
     def detect(self):
+        # 1) メドイドとクラスタ内 SSE を取得
         medoids, ssws = self.compute_medoid_and_ssw()
         max_ssw = max(ssws.values()) if ssws else 0.0
-        scores = np.zeros(len(self.emb))
+
+        # 2) 埋め込みとメドイドを正規化（コサイン類似度算出のため）
+        emb = self.emb
+        # 各ベクトルを行ごとに L2 正規化
+        emb_norm = emb / np.linalg.norm(emb, axis=1, keepdims=True)
+        # メドイドも正規化
+        medoid_norm = {
+            cid: m / np.linalg.norm(m)
+            for cid, m in medoids.items()
+        }
+
+        # 3) スコア計算：w*(1−cosine_sim)
+        scores = np.zeros(len(emb))
         for i, cid in enumerate(self.labels):
-            if cid == -1 or cid not in medoids:
+            if cid == -1 or cid not in medoid_norm:
                 scores[i] = 0.0
             else:
+                # 重み
                 w = max_ssw / (ssws[cid] + self.eps)
-                scores[i] = w * np.linalg.norm(self.emb[i] - medoids[cid])
+                # コサイン類似度
+                sim = float(emb_norm[i].dot(medoid_norm[cid]))
+                # 「離れているほど大きい」スコア
+                scores[i] = w * (1.0 - sim)
+
+        # 4) 閾値判定
         if self.method == "percentile":
             thresh = np.percentile(scores, self.percentile)
             flags = scores > thresh
-        else:  # "lof"
+        else:
             lof = LocalOutlierFactor(n_neighbors=self.lof_n, novelty=True)
-            lof.fit(self.emb)
-            flags = lof.predict(self.emb) < 0
+            lof.fit(emb)
+            flags = lof.predict(emb) < 0
+
         return flags, scores
