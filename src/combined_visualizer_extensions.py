@@ -1,5 +1,6 @@
 from outlier_detector import OutlierDetector
 
+
 def add_outlier_info(
     merged_infos,
     method="percentile",
@@ -18,7 +19,6 @@ def add_outlier_info(
         labels = info["clusters"]       # List[int]
         od = OutlierDetector(
             embeddings=emb,
-            labels=labels,
             method=method,
             percentile=percentile,
             lof_n_neighbors=lof_n_neighbors,

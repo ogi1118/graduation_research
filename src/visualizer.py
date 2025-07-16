@@ -321,7 +321,7 @@ class CombinedVisualizer:
             G,
             pos,
             labels,
-            font_size=8,
+            font_size=16,
             font_color='black',
             # bbox=dict(facecolor='white', edgecolor='none', alpha=0.8),
             ax=ax
