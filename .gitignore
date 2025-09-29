@@ -16,6 +16,7 @@ __pycache__/
 *.txt
 !requirements.txt
 !template_config.json
+!config.json
 
 # 図・画像・スライドなど（再生成可能 or レポート用途）
 *.png

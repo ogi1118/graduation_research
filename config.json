@@ -1,0 +1,17 @@
+{
+  "file_name": "/home/al22091/graduation_research/GPBL_0901.csv",
+  "col_names": [
+    "Motivation for the Actions",
+    "Actions Taken Today",
+    "Actions Planned for Tomorrow"
+  ],
+  "outputs_dir": "outputs",
+  "tmp_dir": "tmp",
+  "outputs_graphs_dir": "outputs/graphs",
+  "outputs_csvs_dir": "outputs/csvs",
+  "embeddings_dir": "outputs/embed",
+  "outlier_method": "percentile",
+  "outlier_percentile": 95,
+  "outlier_lof_n_neighbors": 20,
+  "outlier_epsilon": 1e-6
+}
