@@ -91,12 +91,13 @@ class DualAttention:
     def get_sentence_lists(self):
         return self.sentence_lists
 
-    def read(self, max_sentence_number=20, file_name=None, col_name_from=None, col_name_to=None):
+    def read(self, max_sentence_number=20, file_name=None, col_name_from=None, col_name_to=None, consent_filter=None):
         if file_name is None or col_name_from is None or col_name_to is None:
             raise ValueError(
                 "file_name, col_name_from, col_name_to need to be specified.")
         else:
-            sc = dr.SentenceConverter2(file_name, [col_name_from, col_name_to])
+            sc = dr.SentenceConverter2(
+                file_name, [col_name_from, col_name_to], consent_filter=consent_filter)
             tensor_group_list = sc.convert(max_sentence_number)
             self.sentence_lists = sc.get_sentence_lists()
         doc_embed_array = [[], []]

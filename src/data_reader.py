@@ -8,8 +8,19 @@ from sentence_group import SentenceGroup, SentenceGroupList
 
 
 class SentenceFinder:
-    def __init__(self, csv_file_name) -> None:
+    def __init__(self, csv_file_name, consent_filter=None) -> None:
         self.df = pd.read_csv(csv_file_name, sep=";")
+
+        # コンセントフィルターを適用
+        if consent_filter is not None:
+            consent_column = "Consent to use your data to research"
+            if consent_column in self.df.columns:
+                self.df = self.df[self.df[consent_column] == consent_filter]
+                print(
+                    f"データをフィルタリングしました: '{consent_filter}' - {len(self.df)}行が残りました")
+            else:
+                print(f"警告: '{consent_column}' カラムが見つかりません。フィルタリングをスキップします。")
+
         self.spacy_model = spacy.load("en_core_web_sm")
 
     def get_sentence_list(self, column_name):
@@ -52,8 +63,9 @@ class SentenceFinder:
 
 
 class SentenceConverter:
-    def __init__(self, csv_file_name, column_name1, column_name2) -> None:
-        sentence_finder = SentenceFinder(csv_file_name)
+    def __init__(self, csv_file_name, column_name1, column_name2, consent_filter=None) -> None:
+        sentence_finder = SentenceFinder(
+            csv_file_name, consent_filter=consent_filter)
         self.sentence_list_pair, self.max_sentence_num = sentence_finder.get_sentence_pair_list(
             column_name1, column_name2)
         self.sentence_lists = [sentence_finder.get_sentence_list(
@@ -77,8 +89,9 @@ class SentenceConverter:
 
 
 class SentenceConverter2:
-    def __init__(self, csv_file_name, column_names) -> None:
-        sentence_finder = SentenceFinder(csv_file_name)
+    def __init__(self, csv_file_name, column_names, consent_filter=None) -> None:
+        sentence_finder = SentenceFinder(
+            csv_file_name, consent_filter=consent_filter)
         self.sentence_group_list, self.max_sentence_num = sentence_finder.get_sentence_groups(
             column_names)
 

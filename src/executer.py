@@ -19,16 +19,17 @@ matplotlib.use('Qt5Agg')
 
 
 class Executer:
-    def __init__(self, file_name, col_name_from, col_name_to) -> None:
+    def __init__(self, file_name, col_name_from, col_name_to, consent_filter=None) -> None:
         self.encoded_vector_dim = 20
         self.da = DualAttention(self.encoded_vector_dim)
         self.device = self.da.which_device()
         self.file_name, self.col_name_from, self.col_name_to = file_name, col_name_from, col_name_to
+        self.consent_filter = consent_filter
         self.sentence_lists = None
 
     def train(self, max_sentence_number=20, epochs=100):
         input_tensor, input_padding_flags, output_tensor, output_padding_flags = self.da.read(max_sentence_number=max_sentence_number, file_name=self.file_name,
-                                                                                              col_name_from=self.col_name_from, col_name_to=self.col_name_to)
+                                                                                              col_name_from=self.col_name_from, col_name_to=self.col_name_to, consent_filter=self.consent_filter)
         in_encoder, out_encoder, assoc = self.da.train(
             input_tensor, input_padding_flags, output_tensor, output_padding_flags, epochs=epochs)
         self.sentence_lists = self.da.get_sentence_lists()
@@ -84,6 +85,11 @@ class AttentionEvaluator:
 
 if __name__ == "__main__":
     file_name = config["file_name"]
+
+    # GPBL_origin.csvファイルを使用し、同意したユーザーのデータのみをフィルタリング
+    original_file = "/home/al22091/graduation_research/GPBL_origin.csv"
+    consent_filter_value = "I can provide data to the research to improve the global PBL"
+
     col_names = config["col_names"]
     outputs_dir = config["outputs_dir"]
     tmp_dir = config["tmp_dir"]
@@ -100,7 +106,8 @@ if __name__ == "__main__":
         col_name_to = col_names[j]
         print("col_name_from: {}, col_name_to: {}".format(
             col_name_from, col_name_to))
-        executer = Executer(file_name, col_name_from, col_name_to)
+        executer = Executer(original_file, col_name_from,
+                            col_name_to, consent_filter=consent_filter_value)
         in_encoder, out_encoder, assoc, input_tensor, output_tensor, input_padding_flags, output_padding_flags = executer.train(
             max_sentence_number=20, epochs=1000)
         sentence_lists = executer.get_sentence_lists()
