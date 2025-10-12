@@ -9,7 +9,7 @@ from sentence_group import SentenceGroup, SentenceGroupList
 
 class SentenceFinder:
     def __init__(self, csv_file_name, consent_filter=None) -> None:
-        self.df = pd.read_csv(csv_file_name, sep=",")
+        self.df = pd.read_csv(csv_file_name, sep="\t")
         print("読み込んだデータのヘッダー:", list(self.df.columns))
 
         # コンセントフィルターを適用
