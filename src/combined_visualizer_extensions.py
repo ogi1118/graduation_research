@@ -16,7 +16,6 @@ def add_outlier_info(
     enhanced = []
     for info in merged_infos:
         emb = info["emb"]               # np.ndarray [n_samples, dim]
-        labels = info["clusters"]       # List[int]
         od = OutlierDetector(
             embeddings=emb,
             method=method,

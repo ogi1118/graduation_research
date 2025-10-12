@@ -87,7 +87,6 @@ if __name__ == "__main__":
     file_name = config["file_name"]
 
     # GPBL_origin.csvファイルを使用し、同意したユーザーのデータのみをフィルタリング
-    original_file = "/home/al22091/graduation_research/GPBL_origin.csv"
     consent_filter_value = "I can provide data to the research to improve the global PBL"
 
     col_names = config["col_names"]
@@ -106,7 +105,7 @@ if __name__ == "__main__":
         col_name_to = col_names[j]
         print("col_name_from: {}, col_name_to: {}".format(
             col_name_from, col_name_to))
-        executer = Executer(original_file, col_name_from,
+        executer = Executer(file_name, col_name_from,
                             col_name_to, consent_filter=consent_filter_value)
         in_encoder, out_encoder, assoc, input_tensor, output_tensor, input_padding_flags, output_padding_flags = executer.train(
             max_sentence_number=20, epochs=1000)
@@ -130,3 +129,5 @@ if __name__ == "__main__":
     print("merged_infos:", merged_infos)
 
     CombinedVisualizer.draw_merged_graph(merged_infos)
+
+    CombinedVisualizer.save_major_topics_graph(merged_infos)

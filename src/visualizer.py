@@ -2,7 +2,6 @@ import os
 import json
 from collections import Counter, defaultdict
 import torch
-import csv
 import networkx as nx
 import matplotlib.pyplot as plt
 import numpy as np
@@ -154,23 +153,14 @@ class CombinedVisualizer:
             cf = COL_NAMES[idx]
             ct = COL_NAMES[idx + 1]
             stage_dir = os.path.join(EMB_DIR, f"{cf}_{ct}")
-            # 3D埋め込み・Attention・Maskをロード
-            # [n_samples, n_sentences, dim]
             inp_3d = np.load(os.path.join(stage_dir, 'input_embeddings.npy'))
-            # [n_samples, n_sentences]
             att_in = np.load(os.path.join(stage_dir, 'input_attention.npy'))
-            # [n_samples, n_sentences]
             mask_in = np.load(os.path.join(stage_dir, 'input_mask.npy'))
-            # [n_samples, n_sentences, dim]
             out_3d = np.load(os.path.join(stage_dir, 'output_embeddings.npy'))
-            # [n_samples, n_sentences]
             att_out = np.load(os.path.join(stage_dir, 'output_attention.npy'))
-            # [n_samples, n_sentences]
             mask_out = np.load(os.path.join(stage_dir, 'output_mask.npy'))
-            # Attention重み付き和で2D埋め込み化
             inp_emb = np.einsum('ij, ijk -> ik', mask_in * att_in, inp_3d)
             out_emb = np.einsum('ij, ijk -> ik', mask_out * att_out, out_3d)
-            # 代表文候補ロード
             with open(os.path.join(TMP_DIR, f"cluster_info_{idx}_{idx+1}.json"), 'r', encoding='utf-8') as f:
                 info = json.load(f)
             s_in = info['sentences'][0]
@@ -179,21 +169,16 @@ class CombinedVisualizer:
                 'in_emb': inp_emb, 'out_emb': out_emb,
                 'in_sent': s_in, 'out_sent': s_out
             })
-        # ステージリスト構築
         stages = []
-        # 第1ステージ（only in）
         stages.append({
             'emb': pair_data[0]['in_emb'],
             'sent': pair_data[0]['in_sent'],
             'col': COL_NAMES[0]
         })
-        # 中間ステージ（merge + 代表文候補）
         for i in range(1, n_pairs):
             prev = pair_data[i-1]
             curr = pair_data[i]
-            merged_emb = (prev['out_emb'] + curr['in_emb']
-                          ) / 2  # [n_samples, dim]
-            # [n_samples, 2, dim]
+            merged_emb = (prev['out_emb'] + curr['in_emb']) / 2
             cand_emb = np.stack([prev['out_emb'], curr['in_emb']], axis=1)
             cand_sent = list(zip(prev['out_sent'], curr['in_sent']))
             stages.append({
@@ -202,23 +187,18 @@ class CombinedVisualizer:
                 'cand_sent': cand_sent,
                 'col': COL_NAMES[i]
             })
-        # 最終ステージ（only out）
         stages.append({
             'emb': pair_data[-1]['out_emb'],
             'sent': pair_data[-1]['out_sent'],
             'col': COL_NAMES[-1]
         })
-
         merged_infos = []
-        # 再クラスタリング & 代表文選定 & トピック抽出
         for stage_idx, st in enumerate(stages):
-            X = st['emb']  # [n_samples, dim]
+            X = st['emb']
             col = st['col']
-            # UMAP→DBSCAN
             red = UMAP(n_neighbors=3, init='random',
                        random_state=42).fit_transform(X)
             labels = DBSCAN(eps=eps, min_samples=min_samples).fit_predict(red)
-            # 代表文選定
             if 'cand_emb' in st:
                 centers = {}
                 for cid in np.unique(labels):
@@ -227,14 +207,13 @@ class CombinedVisualizer:
                 sentences = []
                 for j, cid in enumerate(labels):
                     c_emb = centers[cid]
-                    cands = st['cand_emb'][j]  # [2, dim]
-                    sims = (cands @ c_emb) / (
-                        np.linalg.norm(cands, axis=1) * np.linalg.norm(c_emb) + 1e-12)
+                    cands = st['cand_emb'][j]
+                    sims = (cands @ c_emb) / (np.linalg.norm(cands,
+                                                             axis=1) * np.linalg.norm(c_emb) + 1e-12)
                     best = sims.argmax()
                     sentences.append(st['cand_sent'][j][best])
             else:
                 sentences = st['sent']
-            # KeyBERTトピック抽出
             docs_by_cluster = defaultdict(list)
             for cid, s in zip(labels.tolist(), sentences):
                 docs_by_cluster[cid].append(s)
@@ -253,6 +232,68 @@ class CombinedVisualizer:
                 'topics': topics
             })
         return merged_infos
+
+    @staticmethod
+    def save_major_topics_graph(merged_infos, node_size_factor=300, edge_width_factor=1.0):
+        """
+        各列ごとにノードサイズ（degree）最大のノードのみを抜き出したグラフを作成し、major_topics.pngとして保存
+        """
+        fig, ax = plt.subplots(figsize=(16, 8))
+        G = nx.Graph()
+        pos, labels = {}, {}
+
+        # ノード生成（全ノード）
+        node_stage_map = defaultdict(list)
+        for stage, info in enumerate(merged_infos):
+            col = info['col']
+            clusters = info['clusters']
+            topics = info['topics']
+            for sample_idx, cid in enumerate(clusters):
+                node = f"{col}:{cid}:p{stage}"
+                G.add_node(node)
+                labels[node] = '\n'.join(topics.get(cid, [])) or f"{col}:{cid}"
+                pos[node] = (stage, sample_idx)
+                node_stage_map[stage].append(node)
+
+        # エッジ生成（全ノード）
+        n_samples = len(merged_infos[0]['clusters'])
+        for sample in range(n_samples):
+            for stage in range(len(merged_infos) - 1):
+                cid1 = merged_infos[stage]['clusters'][sample]
+                cid2 = merged_infos[stage + 1]['clusters'][sample]
+                u = f"{merged_infos[stage]['col']}:{cid1}:p{stage}"
+                v = f"{merged_infos[stage + 1]['col']}:{cid2}:p{stage + 1}"
+                G.add_edge(u, v)
+
+        # 各stageごとに最大degreeノードを抽出
+        major_nodes = []
+        for stage, nodes in node_stage_map.items():
+            if nodes:
+                degrees = [(n, G.degree(n)) for n in nodes]
+                max_node = max(degrees, key=lambda x: x[1])[0]
+                major_nodes.append(max_node)
+
+        # major_nodesのみでサブグラフ作成
+        H = G.subgraph(major_nodes)
+        node_sizes = [node_size_factor * H.degree(n) for n in H.nodes()]
+        nx.draw(
+            H,
+            {n: pos[n] for n in H.nodes()},
+            ax=ax,
+            with_labels=True,
+            labels={n: labels[n] for n in H.nodes()},
+            node_size=node_sizes,
+            node_color='gold',
+            edgecolors='tomato',
+            edge_color='gray',
+            linewidths=0.5,
+            alpha=0.9
+        )
+        plt.tight_layout()
+        os.makedirs(OUTPUTS_GRAPHS_DIR, exist_ok=True)
+        plt.savefig(os.path.join(OUTPUTS_GRAPHS_DIR, 'major_topics.png'))
+        plt.close()
+        # 最終ステージ（only out）
 
     @staticmethod
     def draw_merged_graph(merged_infos, node_size_factor=300, edge_width_factor=1.0):
@@ -279,7 +320,8 @@ class CombinedVisualizer:
                 node = f"{col}:{cid}:p{stage}"
                 G.add_node(node)
                 # 色だけフラグで変える
-                G.nodes[node]['color'] = 'salmon' if flags[sample_idx] else 'white'
+                # G.nodes[node]['color'] = 'salmon' if flags[sample_idx] else 'white'
+                G.nodes[node]['color'] = 'white'
                 labels[node] = '\n'.join(topics.get(cid, [])) or f"{col}:{cid}"
                 pos[node] = (stage, sample_idx)
 
@@ -321,7 +363,7 @@ class CombinedVisualizer:
             G,
             pos,
             labels,
-            font_size=16,
+            font_size=5,
             font_color='black',
             # bbox=dict(facecolor='white', edgecolor='none', alpha=0.8),
             ax=ax
