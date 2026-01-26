@@ -19,9 +19,6 @@ __pycache__/
 !config.json
 
 # 図・画像・スライドなど（再生成可能 or レポート用途）
-*.png
-*.jpg
-*.jpeg
 *.svg
 *.pdf
 *.pptx

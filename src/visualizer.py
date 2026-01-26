@@ -32,7 +32,8 @@ def _to_numpy(tensor):
 class Visualizer:
     def __init__(self, input_tensor, output_tensor, input_padding_flags,
                  output_padding_flags, sentence_lists, attention_value_lists,
-                 device=torch.device('cpu'), col_name_from=None, col_name_to=None):
+                 device=torch.device('cpu'), col_name_from=None, col_name_to=None,
+                 date_key=None, output_graphs_dir=None, embeddings_dir=None, tmp_dir=None):
         self.input_tensor = input_tensor
         self.output_tensor = output_tensor
         self.input_padding_flags = input_padding_flags
@@ -42,8 +43,14 @@ class Visualizer:
         self.device = device
         self.col_name_from = col_name_from
         self.col_name_to = col_name_to
+        self.date_key = date_key
+        self.output_graphs_dir = output_graphs_dir or OUTPUTS_GRAPHS_DIR
+        self.embeddings_dir = embeddings_dir or EMB_DIR
+        self.tmp_dir = tmp_dir or TMP_DIR
+
         # 埋め込みベクトルおよびAttention/Maskをバイナリ保存
-        stage_dir = os.path.join(EMB_DIR, f"{col_name_from}_{col_name_to}")
+        stage_dir = os.path.join(
+            self.embeddings_dir, f"{col_name_from}_{col_name_to}")
         os.makedirs(stage_dir, exist_ok=True)
         inp = _to_numpy(self.input_tensor)
         out = _to_numpy(self.output_tensor)
@@ -97,9 +104,9 @@ class Visualizer:
             plt.figure()
             plt.scatter(red[:, 0], red[:, 1], c=labels, alpha=0.8)
             plt.colorbar()
-            os.makedirs(OUTPUTS_GRAPHS_DIR, exist_ok=True)
+            os.makedirs(self.output_graphs_dir, exist_ok=True)
             plt.savefig(os.path.join(
-                OUTPUTS_GRAPHS_DIR,
+                self.output_graphs_dir,
                 f"[{self.col_name_from}]2[{self.col_name_to}]-column-{i}.png"
             ))
             plt.close()
@@ -120,10 +127,10 @@ class Visualizer:
                     stop_words='english', use_mmr=True, top_n=3
                 )
                 topics[col][cid] = [kw[0] for kw in kws]
-        os.makedirs(TMP_DIR, exist_ok=True)
+        os.makedirs(self.tmp_dir, exist_ok=True)
         idx = COL_NAMES.index(self.col_name_from)
         jdx = COL_NAMES.index(self.col_name_to)
-        with open(os.path.join(TMP_DIR, f"cluster_info_{idx}_{jdx}.json"), 'w', encoding='utf-8') as f:
+        with open(os.path.join(self.tmp_dir, f"cluster_info_{idx}_{jdx}.json"), 'w', encoding='utf-8') as f:
             json.dump({
                 'col_pair': [self.col_name_from, self.col_name_to],
                 'clusters': [list(map(int, nums[0])), list(map(int, nums[1]))],
@@ -135,24 +142,28 @@ class Visualizer:
 
 class CombinedVisualizer:
     @staticmethod
-    def load_cluster_infos():
+    def load_cluster_infos(tmp_dir=None):
+        tmp_dir = tmp_dir or TMP_DIR
         infos = []
         for idx in range(len(COL_NAMES) - 1):
             jdx = idx + 1
-            fn = os.path.join(TMP_DIR, f"cluster_info_{idx}_{jdx}.json")
+            fn = os.path.join(tmp_dir, f"cluster_info_{idx}_{jdx}.json")
             if os.path.isfile(fn):
                 with open(fn, encoding='utf-8') as f:
                     infos.append(json.load(f))
         return infos
 
     @staticmethod
-    def merge_and_recluster(eps, min_samples):
+    def merge_and_recluster(eps, min_samples, date_key=None, tmp_dir=None, embeddings_dir=None):
+        tmp_dir = tmp_dir or TMP_DIR
+        embeddings_dir = embeddings_dir or EMB_DIR
+
         n_pairs = len(COL_NAMES) - 1
         pair_data = []
         for idx in range(n_pairs):
             cf = COL_NAMES[idx]
             ct = COL_NAMES[idx + 1]
-            stage_dir = os.path.join(EMB_DIR, f"{cf}_{ct}")
+            stage_dir = os.path.join(embeddings_dir, f"{cf}_{ct}")
             inp_3d = np.load(os.path.join(stage_dir, 'input_embeddings.npy'))
             att_in = np.load(os.path.join(stage_dir, 'input_attention.npy'))
             mask_in = np.load(os.path.join(stage_dir, 'input_mask.npy'))
@@ -161,7 +172,7 @@ class CombinedVisualizer:
             mask_out = np.load(os.path.join(stage_dir, 'output_mask.npy'))
             inp_emb = np.einsum('ij, ijk -> ik', mask_in * att_in, inp_3d)
             out_emb = np.einsum('ij, ijk -> ik', mask_out * att_out, out_3d)
-            with open(os.path.join(TMP_DIR, f"cluster_info_{idx}_{idx+1}.json"), 'r', encoding='utf-8') as f:
+            with open(os.path.join(tmp_dir, f"cluster_info_{idx}_{idx+1}.json"), 'r', encoding='utf-8') as f:
                 info = json.load(f)
             s_in = info['sentences'][0]
             s_out = info['sentences'][1]
@@ -234,10 +245,12 @@ class CombinedVisualizer:
         return merged_infos
 
     @staticmethod
-    def save_major_topics_graph(merged_infos, node_size_factor=300, edge_width_factor=1.0):
+    def save_major_topics_graph(merged_infos, node_size_factor=300, edge_width_factor=1.0, date_key=None, output_graphs_dir=None):
         """
         各列ごとにノードサイズ（degree）最大のノードのみを抜き出したグラフを作成し、major_topics.pngとして保存
         """
+        output_graphs_dir = output_graphs_dir or OUTPUTS_GRAPHS_DIR
+
         fig, ax = plt.subplots(figsize=(16, 8))
         G = nx.Graph()
         pos, labels = {}, {}
@@ -290,13 +303,16 @@ class CombinedVisualizer:
             alpha=0.9
         )
         plt.tight_layout()
-        os.makedirs(OUTPUTS_GRAPHS_DIR, exist_ok=True)
-        plt.savefig(os.path.join(OUTPUTS_GRAPHS_DIR, 'major_topics.png'))
+        os.makedirs(output_graphs_dir, exist_ok=True)
+
+        # ファイル名に日付を含める
+        filename = f"major_topics{f'_{date_key}' if date_key else ''}.png"
+        plt.savefig(os.path.join(output_graphs_dir, filename))
         plt.close()
         # 最終ステージ（only out）
 
     @staticmethod
-    def draw_merged_graph(merged_infos, node_size_factor=300, edge_width_factor=1.0):
+    def draw_merged_graph(merged_infos, node_size_factor=300, edge_width_factor=1.0, date_key=None, output_graphs_dir=None):
         """
         merged_infos: List[Dict] with keys:
         - 'col': str
@@ -306,6 +322,8 @@ class CombinedVisualizer:
         node_size_factor: ノードサイズ倍率
         edge_width_factor: エッジ太さ倍率
         """
+        output_graphs_dir = output_graphs_dir or OUTPUTS_GRAPHS_DIR
+
         fig, ax = plt.subplots(figsize=(16, 8))
         G = nx.Graph()
         pos, edge_w, labels = {}, Counter(), {}
@@ -369,6 +387,9 @@ class CombinedVisualizer:
             ax=ax
         )
         plt.tight_layout()
-        os.makedirs(OUTPUTS_GRAPHS_DIR, exist_ok=True)
-        plt.savefig(os.path.join(OUTPUTS_GRAPHS_DIR, 'merged_graph.png'))
-        plt.show()
+        os.makedirs(output_graphs_dir, exist_ok=True)
+
+        # ファイル名に日付を含める
+        filename = f"merged_graph{f'_{date_key}' if date_key else ''}.png"
+        plt.savefig(os.path.join(output_graphs_dir, filename))
+        plt.close()
