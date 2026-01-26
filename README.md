@@ -336,6 +336,107 @@ python src/executer.py
 
 ---
 
-## 📝 ライセンス
+## � 先行研究の実装について
+
+本リポジトリは、**先行研究の実装に基づいて拡張・改善**されています。
+
+### 先行研究の初期実装（2025年5月14日）
+
+初期コミット（`31cd798 - Clean repo with correct scope`）時点での構成：
+
+```
+初期ディレクトリ構成:
+├── deep/                           # メインの実装
+│   ├── bert_model_loader.py
+│   ├── data_reader.py
+│   ├── dual_attention.py
+│   ├── executer.py
+│   ├── sentence_encoder.py
+│   └── test.py
+├── simplified_deep/                # 簡略版実装
+│   ├── bert_model_loader.py
+│   ├── data_reader.py
+│   ├── dual_attention.py
+│   ├── executer.py
+│   ├── sentence_encoder.py
+│   ├── sentence_group.py
+│   └── test.py
+└── old/                            # 旧実装（参考）
+    ├── clustering.py
+    ├── preprocess.py
+    ├── token_element.py
+    └── w2v.py
+```
+
+### 開発の流れ
+
+| 段階 | 主要な変更 |
+|------|----------|
+| **初期実装** | 基本的なDual Attention、BERT埋め込み、データ読み込み |
+| **2カラム→3カラム対応** | 複数カラムペアの処理にループ対応（feature/3columns-own） |
+| **ディレクトリ構造整理** | `deep/` と `simplified_deep/` の統合 |
+| **Visualizer追加** | クラスタリング、グラフ可視化機能を実装 |
+| **設定ファイル対応** | `config.json` での動的パラメータ管理 |
+| **統合グラフ生成** | `CombinedVisualizer` で複数カラムペアを統合可視化 |
+
+### 先行研究の実装の復元
+
+`research_implementation/prior_work/` ディレクトリに、初期コミット時点の先行研究実装を復元・保存しています。
+
+**復元されたファイル**:
+- **deep/**: メイン実装版
+  - `deep_executer.py` - 2カラム対応版メイン実行スクリプト
+  - `deep_dual_attention.py` - Dual Attentionの基本実装
+  - `deep_data_reader.py` - データ読み込みの初期実装
+  - `deep_sentence_encoder.py` - 文埋め込みの初期実装
+  - `deep_bert_model_loader.py` - BERTモデルローダーの初期実装
+
+- **simplified_deep/**: 簡略版実装
+  - `simplified_deep_executer.py` - 複数カラムペア対応版（ループ処理）
+  - `simplified_deep_dual_attention.py` - 改良版Dual Attention
+  - `simplified_deep_data_reader.py` - 拡張版データ読み込み
+  - `simplified_deep_sentence_encoder.py` - 拡張版文埋め込み
+  - `simplified_deep_sentence_group.py` - 構造化データ管理（新規）
+  - `simplified_deep_bert_model_loader.py` - BERTモデルローダー
+
+- **old/**: 旧実装（参考用）
+  - `old_clustering.py` - 従来のクラスタリング手法
+  - `old_preprocess.py` - 前処理スクリプト
+  - `old_token_element.py` - トークン処理
+  - `old_w2v.py` - Word2Vec埋め込み
+
+これらのファイルは**参考用**として保存されており、現在の実装（`src/`）がメイン処理になります。
+| **外れ値検出機能** | パーセンタイル法・LOF法による異常検出 |
+| **時系列対応** | `day_clusterer.py`・`timeline_merger.py` でタイムスタンプ支援 |
+
+### 現在の実装との違い
+
+| 項目 | 先行研究 | 現在の実装 |
+|------|--------|----------|
+| ディレクトリ構成 | `deep/`、`simplified_deep/`、`old/` | `src/`、`embedding_experiment/`、`tmpSrc/` |
+| 設定方式 | ハードコード主体 → `config.json` | `config.json` + `config_loader.py` |
+| クラスタリング | 基本的なDBSCAN | UMAP + DBSCAN + 外れ値検出 |
+| 可視化 | 散布図のみ | ネットワークグラフ、トピック抽出、時系列対応 |
+| データ構造 | `SentenceConverter` | `SentenceGroup`、`SentenceGroupList`、`TensorGroup` |
+| モデル | sentence-transformers/all-distilroberta-v1 | 同一（2.6.1へアップグレード） |
+
+### コミット履歴の主要マイルストーン
+
+- **初期実装段階** (コミット: `31cd798` - `a995562`)
+  - 基本的なDual Attentionアーキテクチャ
+  - 2カラム間の対応学習
+  
+- **機能拡張段階** (コミット: `5dcd5be` - `dfddacd`)
+  - 3カラム対応
+  - 出力ディレクトリ管理の改善
+
+- **可視化・分析強化** (コミット: `c75a385` 以降)
+  - README整備
+  - グラフ生成機能
+  - ネットワーク分析
+
+---
+
+## �📝 ライセンス
 
 MIT License（詳細はプロジェクトルートの LICENSE ファイルを参照）
