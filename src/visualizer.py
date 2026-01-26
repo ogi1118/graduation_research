@@ -289,7 +289,8 @@ class CombinedVisualizer:
         # major_nodesのみでサブグラフ作成
         H = G.subgraph(major_nodes)
         # merged_graphと同じノードサイズ計算式を使用
-        node_sizes = [node_size_factor * G.degree(n, weight='weight') for n in H.nodes()]
+        node_sizes = [node_size_factor *
+                      G.degree(n, weight='weight') for n in H.nodes()]
         nx.draw(
             H,
             {n: pos[n] for n in H.nodes()},
