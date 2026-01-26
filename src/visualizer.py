@@ -251,7 +251,7 @@ class CombinedVisualizer:
         """
         output_graphs_dir = output_graphs_dir or OUTPUTS_GRAPHS_DIR
 
-        fig, ax = plt.subplots(figsize=(16, 8))
+        fig, ax = plt.subplots(figsize=(20, 10))
         G = nx.Graph()
         pos, labels = {}, {}
 
@@ -278,17 +278,18 @@ class CombinedVisualizer:
                 v = f"{merged_infos[stage + 1]['col']}:{cid2}:p{stage + 1}"
                 G.add_edge(u, v)
 
-        # 各stageごとに最大degreeノードを抽出
+        # 各stageごとに最大degreeノードを抽出（weighted degreeで比較）
         major_nodes = []
         for stage, nodes in node_stage_map.items():
             if nodes:
-                degrees = [(n, G.degree(n)) for n in nodes]
+                degrees = [(n, G.degree(n, weight='weight')) for n in nodes]
                 max_node = max(degrees, key=lambda x: x[1])[0]
                 major_nodes.append(max_node)
 
         # major_nodesのみでサブグラフ作成
         H = G.subgraph(major_nodes)
-        node_sizes = [node_size_factor * H.degree(n) for n in H.nodes()]
+        # merged_graphと同じノードサイズ計算式を使用
+        node_sizes = [node_size_factor * G.degree(n, weight='weight') for n in H.nodes()]
         nx.draw(
             H,
             {n: pos[n] for n in H.nodes()},
@@ -300,7 +301,9 @@ class CombinedVisualizer:
             edgecolors='tomato',
             edge_color='gray',
             linewidths=0.5,
-            alpha=0.9
+            alpha=0.9,
+            font_size=10,
+            font_weight='bold'
         )
         plt.tight_layout()
         os.makedirs(output_graphs_dir, exist_ok=True)
@@ -324,7 +327,7 @@ class CombinedVisualizer:
         """
         output_graphs_dir = output_graphs_dir or OUTPUTS_GRAPHS_DIR
 
-        fig, ax = plt.subplots(figsize=(16, 8))
+        fig, ax = plt.subplots(figsize=(24, 12))
         G = nx.Graph()
         pos, edge_w, labels = {}, Counter(), {}
 
@@ -341,7 +344,8 @@ class CombinedVisualizer:
                 # G.nodes[node]['color'] = 'salmon' if flags[sample_idx] else 'white'
                 G.nodes[node]['color'] = 'white'
                 labels[node] = '\n'.join(topics.get(cid, [])) or f"{col}:{cid}"
-                pos[node] = (stage, sample_idx)
+                # Y軸方向の間隔を広げる（1.5倍）
+                pos[node] = (stage, sample_idx * 1.5)
 
         # エッジ生成: サンプルIDでノードを繋ぐ
         n_samples = len(merged_infos[0]['clusters'])
@@ -381,9 +385,10 @@ class CombinedVisualizer:
             G,
             pos,
             labels,
-            font_size=5,
+            font_size=6,
             font_color='black',
-            # bbox=dict(facecolor='white', edgecolor='none', alpha=0.8),
+            bbox=dict(facecolor='white', edgecolor='lightgray',
+                      alpha=0.85, boxstyle='round,pad=0.3'),
             ax=ax
         )
         plt.tight_layout()
