@@ -255,25 +255,29 @@ class CombinedVisualizer:
         G = nx.Graph()
         pos, labels = {}, {}
 
-        # ノード生成（全ノード）
+        # ノード生成（ノイズ-1を除外）
         node_stage_map = defaultdict(list)
         for stage, info in enumerate(merged_infos):
             col = info['col']
             clusters = info['clusters']
             topics = info['topics']
             for sample_idx, cid in enumerate(clusters):
+                if cid == -1:  # ノイズを除外
+                    continue
                 node = f"{col}:{cid}:p{stage}"
                 G.add_node(node)
                 labels[node] = '\n'.join(topics.get(cid, [])) or f"{col}:{cid}"
                 pos[node] = (stage, sample_idx)
                 node_stage_map[stage].append(node)
 
-        # エッジ生成（全ノード）
+        # エッジ生成（ノイズ-1を除外）
         n_samples = len(merged_infos[0]['clusters'])
         for sample in range(n_samples):
             for stage in range(len(merged_infos) - 1):
                 cid1 = merged_infos[stage]['clusters'][sample]
                 cid2 = merged_infos[stage + 1]['clusters'][sample]
+                if cid1 == -1 or cid2 == -1:  # ノイズが含まれている場合は除外
+                    continue
                 u = f"{merged_infos[stage]['col']}:{cid1}:p{stage}"
                 v = f"{merged_infos[stage + 1]['col']}:{cid2}:p{stage + 1}"
                 G.add_edge(u, v)
@@ -332,13 +336,15 @@ class CombinedVisualizer:
         G = nx.Graph()
         pos, edge_w, labels = {}, Counter(), {}
 
-        # ノード生成
+        # ノード生成（ノイズ-1を除外）
         for stage, info in enumerate(merged_infos):
             col = info['col']
             clusters = info['clusters']
             topics = info['topics']
             flags = info.get('outlier_flags', [False] * len(clusters))
             for sample_idx, cid in enumerate(clusters):
+                if cid == -1:  # ノイズを除外
+                    continue
                 node = f"{col}:{cid}:p{stage}"
                 G.add_node(node)
                 # 色だけフラグで変える
@@ -348,12 +354,14 @@ class CombinedVisualizer:
                 # Y軸方向の間隔を広げる（1.5倍）
                 pos[node] = (stage, sample_idx * 1.5)
 
-        # エッジ生成: サンプルIDでノードを繋ぐ
+        # エッジ生成: サンプルIDでノードを繋ぐ（ノイズ-1を除外）
         n_samples = len(merged_infos[0]['clusters'])
         for sample in range(n_samples):
             for stage in range(len(merged_infos) - 1):
                 cid1 = merged_infos[stage]['clusters'][sample]
                 cid2 = merged_infos[stage + 1]['clusters'][sample]
+                if cid1 == -1 or cid2 == -1:  # ノイズが含まれている場合は除外
+                    continue
                 u = f"{merged_infos[stage]['col']}:{cid1}:p{stage}"
                 v = f"{merged_infos[stage + 1]['col']}:{cid2}:p{stage + 1}"
                 edge_w[(u, v)] += 1
