@@ -307,7 +307,7 @@ class CombinedVisualizer:
             edge_color='gray',
             linewidths=0.5,
             alpha=0.9,
-            font_size=10,
+            font_size=20,
             font_weight='bold'
         )
         plt.tight_layout()
@@ -336,23 +336,47 @@ class CombinedVisualizer:
         G = nx.Graph()
         pos, edge_w, labels = {}, Counter(), {}
 
+        # 各stageのクラス数を集計し、y軸の等間隔配置を計算
+        stage_clusters = []
+        for stage, info in enumerate(merged_infos):
+            clusters = info['clusters']
+            unique_clusters = set(c for c in clusters if c != -1)
+            stage_clusters.append(unique_clusters)
+
+        # 各stageで最大のクラス数を取得
+        max_clusters_per_stage = [len(sc) for sc in stage_clusters]
+        y_max = 10 if not max_clusters_per_stage else max(
+            max_clusters_per_stage) * 1.2
+
         # ノード生成（ノイズ-1を除外）
+        node_degrees = {}  # ノードのサイズ情報を保存（後でラベル表示判定に使用）
         for stage, info in enumerate(merged_infos):
             col = info['col']
             clusters = info['clusters']
             topics = info['topics']
             flags = info.get('outlier_flags', [False] * len(clusters))
+
+            # ステージ内でのクラスタの対応関係を記録
+            cluster_to_y = {}
+            unique_cids = sorted(set(c for c in clusters if c != -1))
+            y_positions = np.linspace(0, y_max, len(
+                unique_cids)) if unique_cids else []
+
+            for cid_idx, cid in enumerate(unique_cids):
+                cluster_to_y[cid] = y_positions[cid_idx]
+
             for sample_idx, cid in enumerate(clusters):
                 if cid == -1:  # ノイズを除外
                     continue
                 node = f"{col}:{cid}:p{stage}"
                 G.add_node(node)
-                # 色だけフラグで変える
-                # G.nodes[node]['color'] = 'salmon' if flags[sample_idx] else 'white'
-                G.nodes[node]['color'] = 'white'
+                G.nodes[node]['color'] = 'salmon'
                 labels[node] = '\n'.join(topics.get(cid, [])) or f"{col}:{cid}"
-                # Y軸方向の間隔を広げる（1.5倍）
-                pos[node] = (stage, sample_idx * 1.5)
+                # クラスタに属するサンプル数でノードサイズを計算
+                cid_count = sum(1 for c in clusters if c == cid)
+                node_degrees[node] = cid_count
+                # y座標を等間隔に配置
+                pos[node] = (stage, cluster_to_y[cid])
 
         # エッジ生成: サンプルIDでノードを繋ぐ（ノイズ-1を除外）
         n_samples = len(merged_infos[0]['clusters'])
@@ -390,14 +414,41 @@ class CombinedVisualizer:
             linewidths=0.5,
             alpha=0.9
         )
+
+        # ラベル重複判定と描画処理
+        # ノードのバウンディングボックスから重複を検出し、小さいノードのラベルを非表示にする
+        # labels_to_display = labels.copy()
+        # node_pos_list = [(n, pos[n]) for n in G.nodes()]
+        #
+        # # y座標が近いノード同士を検出
+        # threshold = y_max * 0.1  # 重複判定の閾値
+        # for i, (node_i, pos_i) in enumerate(node_pos_list):
+        #     for node_j, pos_j in node_pos_list[i+1:]:
+        #         # 同じステージのノード同士は比較しない（エッジでつながっているため）
+        #         x_i, y_i = pos_i
+        #         x_j, y_j = pos_j
+        #
+        #         # y座標が近く、x座標が異なる場合をチェック
+        #         if x_i != x_j and abs(y_i - y_j) < threshold:
+        #             # ノードサイズが小さい方のラベルを非表示
+        #             size_i = node_degrees.get(node_i, 1)
+        #             size_j = node_degrees.get(node_j, 1)
+        #             if size_i < size_j:
+        #                 labels_to_display[node_i] = ''
+        #             elif size_j < size_i:
+        #                 labels_to_display[node_j] = ''
+
+        # すべてのラベルを表示（重複削除なし）
+        labels_to_display = labels
+
         nx.draw_networkx_labels(
             G,
             pos,
-            labels,
-            font_size=6,
+            labels_to_display,
+            font_size=20,
             font_color='black',
             bbox=dict(facecolor='white', edgecolor='lightgray',
-                      alpha=0.85, boxstyle='round,pad=0.3'),
+                      alpha=0.2, boxstyle='round,pad=0.3'),
             ax=ax
         )
         plt.tight_layout()
