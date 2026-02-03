@@ -302,7 +302,7 @@ class CombinedVisualizer:
             with_labels=True,
             labels={n: labels[n] for n in H.nodes()},
             node_size=node_sizes,
-            node_color='gold',
+            node_color='salmon',
             edgecolors='tomato',
             edge_color='gray',
             linewidths=0.5,

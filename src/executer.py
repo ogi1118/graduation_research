@@ -12,12 +12,12 @@ import matplotlib
 from combined_visualizer_extensions import add_outlier_info
 matplotlib.use('Qt5Agg')
 
-# SEED = 42
-# random.seed(SEED)
-# np.random.seed(SEED)
-# torch.manual_seed(SEED)
-# torch.cuda.manual_seed_all(SEED)
-# torch.backends.cudnn.deterministic = True
+SEED = 42
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+torch.cuda.manual_seed_all(SEED)
+torch.backends.cudnn.deterministic = True
 
 
 class Executer:
