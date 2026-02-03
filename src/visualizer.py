@@ -247,30 +247,65 @@ class CombinedVisualizer:
     @staticmethod
     def save_major_topics_graph(merged_infos, node_size_factor=300, edge_width_factor=1.0, date_key=None, output_graphs_dir=None):
         """
-        各列ごとにノードサイズ（degree）最大のノードのみを抜き出したグラフを作成し、major_topics.pngとして保存
+        merged_graphと全く同じグラフを描画。ただし各ステージで最大ノード（サンプル数）以外は
+        白色（縁なし）で表示して、視覚的に最大ノードのみをハイライト
         """
         output_graphs_dir = output_graphs_dir or OUTPUTS_GRAPHS_DIR
 
-        fig, ax = plt.subplots(figsize=(20, 10))
+        fig, ax = plt.subplots(figsize=(16, 12))
         G = nx.Graph()
-        pos, labels = {}, {}
+        pos, edge_w, labels = {}, Counter(), {}
+
+        # 全ステージの全クラスタIDを集計してグローバルなY座標マッピングを作成
+        all_unique_cids = set()
+        for info in merged_infos:
+            clusters = info['clusters']
+            all_unique_cids.update(c for c in clusters if c != -1)
+
+        # 全クラスタに対してY座標を割り当て
+        sorted_all_cids = sorted(all_unique_cids)
+        y_max = 10
+        y_positions_global = np.linspace(0, y_max, len(
+            sorted_all_cids)) if sorted_all_cids else []
+        global_cid_to_y = {cid: y_positions_global[i]
+                           for i, cid in enumerate(sorted_all_cids)}
 
         # ノード生成（ノイズ-1を除外）
-        node_stage_map = defaultdict(list)
+        node_degrees = {}  # ノードのサイズ情報を保存
+        major_nodes_per_stage = {}  # 各ステージの最大ノード
+
         for stage, info in enumerate(merged_infos):
             col = info['col']
             clusters = info['clusters']
             topics = info['topics']
+
+            # ステージ内での最大サンプル数を追跡
+            stage_samples = []
+
             for sample_idx, cid in enumerate(clusters):
                 if cid == -1:  # ノイズを除外
                     continue
                 node = f"{col}:{cid}:p{stage}"
                 G.add_node(node)
+                # デフォルトは白色で初期化
+                G.nodes[node]['color'] = 'white'
                 labels[node] = '\n'.join(topics.get(cid, [])) or f"{col}:{cid}"
-                pos[node] = (stage, sample_idx)
-                node_stage_map[stage].append(node)
+                # クラスタに属するサンプル数でノードサイズを計算
+                cid_count = sum(1 for c in clusters if c == cid)
+                node_degrees[node] = cid_count
+                stage_samples.append((node, cid_count))
+                # グローバルなY座標マッピングを使用（全ステージで統一）
+                pos[node] = (stage, global_cid_to_y[cid])
 
-        # エッジ生成（ノイズ-1を除外）
+            # 各ステージの最大ノードを特定して色をsalmonに変更
+            if stage_samples:
+                max_node, max_count = max(stage_samples, key=lambda x: x[1])
+                major_nodes_per_stage[stage] = max_node
+                G.nodes[max_node]['color'] = 'salmon'
+                print(
+                    f"[DEBUG major] Stage {stage}: max_node={max_node}, sample_count={max_count}")
+
+        # エッジ生成: サンプルIDでノードを繋ぐ（ノイズ-1を除外）
         n_samples = len(merged_infos[0]['clusters'])
         for sample in range(n_samples):
             for stage in range(len(merged_infos) - 1):
@@ -280,35 +315,57 @@ class CombinedVisualizer:
                     continue
                 u = f"{merged_infos[stage]['col']}:{cid1}:p{stage}"
                 v = f"{merged_infos[stage + 1]['col']}:{cid2}:p{stage + 1}"
-                G.add_edge(u, v)
+                edge_w[(u, v)] += 1
 
-        # 各stageごとに最大degreeノードを抽出（weighted degreeで比較）
-        major_nodes = []
-        for stage, nodes in node_stage_map.items():
-            if nodes:
-                degrees = [(n, G.degree(n, weight='weight')) for n in nodes]
-                max_node = max(degrees, key=lambda x: x[1])[0]
-                major_nodes.append(max_node)
+        # 辺追加
+        for (u, v), w in edge_w.items():
+            G.add_edge(u, v, weight=w)
 
-        # major_nodesのみでサブグラフ作成
-        H = G.subgraph(major_nodes)
-        # merged_graphと同じノードサイズ計算式を使用
+        # ノードサイズとエッジ幅をデータ量に応じて設定
         node_sizes = [node_size_factor *
-                      G.degree(n, weight='weight') for n in H.nodes()]
+                      G.degree(n, weight='weight') for n in G.nodes()]
+        edge_widths = [edge_width_factor * G[u][v]['weight']
+                       for u, v in G.edges()]
+
+        # 最大ノード間のエッジのみ灰色、その他は白色に設定
+        edge_color_list = []
+        for u, v in G.edges():
+            # 両ノードがサーモン色（最大ノード）の場合のみ灰色
+            if G.nodes[u]['color'] == 'salmon' and G.nodes[v]['color'] == 'salmon':
+                edge_color_list.append('gray')
+            else:
+                edge_color_list.append('white')
+
+        # グラフ描画
         nx.draw(
-            H,
-            {n: pos[n] for n in H.nodes()},
+            G,
+            pos,
             ax=ax,
-            with_labels=True,
-            labels={n: labels[n] for n in H.nodes()},
+            with_labels=False,
             node_size=node_sizes,
-            node_color='salmon',
-            edgecolors='tomato',
-            edge_color='gray',
-            linewidths=0.5,
-            alpha=0.9,
+            node_color=[G.nodes[n]['color'] for n in G.nodes()],
+            width=edge_widths,
+            edgecolors=['tomato' if G.nodes[n]['color'] ==
+                        'salmon' else 'none' for n in G.nodes()],
+            edge_color=edge_color_list,
+            linewidths=[0.5 if G.nodes[n]['color'] ==
+                        'salmon' else 0 for n in G.nodes()],
+            alpha=0.9
+        )
+
+        # ラベルはsalmonノード（最大ノード）のみ表示
+        labels_to_display = {n: labels[n] if G.nodes[n]['color'] == 'salmon' else ''
+                             for n in G.nodes()}
+
+        nx.draw_networkx_labels(
+            G,
+            pos,
+            labels_to_display,
             font_size=20,
-            font_weight='bold'
+            font_color='black',
+            bbox=dict(facecolor='white', edgecolor='lightgray',
+                      alpha=0.2, boxstyle='round,pad=0.3'),
+            ax=ax
         )
         plt.tight_layout()
         os.makedirs(output_graphs_dir, exist_ok=True)
@@ -317,7 +374,6 @@ class CombinedVisualizer:
         filename = f"major_topics{f'_{date_key}' if date_key else ''}.png"
         plt.savefig(os.path.join(output_graphs_dir, filename))
         plt.close()
-        # 最終ステージ（only out）
 
     @staticmethod
     def draw_merged_graph(merged_infos, node_size_factor=300, edge_width_factor=1.0, date_key=None, output_graphs_dir=None):
@@ -329,41 +385,41 @@ class CombinedVisualizer:
         - 'outlier_flags': List[bool]
         node_size_factor: ノードサイズ倍率
         edge_width_factor: エッジ太さ倍率
+
+        デバッグ情報：各ステージでのノードサイズの最大値を出力
         """
         output_graphs_dir = output_graphs_dir or OUTPUTS_GRAPHS_DIR
 
-        fig, ax = plt.subplots(figsize=(24, 12))
+        fig, ax = plt.subplots(figsize=(16, 12))
         G = nx.Graph()
         pos, edge_w, labels = {}, Counter(), {}
 
-        # 各stageのクラス数を集計し、y軸の等間隔配置を計算
-        stage_clusters = []
-        for stage, info in enumerate(merged_infos):
+        # 全ステージの全クラスタIDを集計してグローバルなY座標マッピングを作成
+        all_unique_cids = set()
+        for info in merged_infos:
             clusters = info['clusters']
-            unique_clusters = set(c for c in clusters if c != -1)
-            stage_clusters.append(unique_clusters)
+            all_unique_cids.update(c for c in clusters if c != -1)
 
-        # 各stageで最大のクラス数を取得
-        max_clusters_per_stage = [len(sc) for sc in stage_clusters]
-        y_max = 10 if not max_clusters_per_stage else max(
-            max_clusters_per_stage) * 1.2
+        # 全クラスタに対してY座標を割り当て
+        sorted_all_cids = sorted(all_unique_cids)
+        y_max = 10
+        y_positions_global = np.linspace(0, y_max, len(
+            sorted_all_cids)) if sorted_all_cids else []
+        global_cid_to_y = {cid: y_positions_global[i]
+                           for i, cid in enumerate(sorted_all_cids)}
 
         # ノード生成（ノイズ-1を除外）
         node_degrees = {}  # ノードのサイズ情報を保存（後でラベル表示判定に使用）
+        stage_max_nodes = {}  # 各ステージの最大サイズノードを記録（デバッグ用）
+
         for stage, info in enumerate(merged_infos):
             col = info['col']
             clusters = info['clusters']
             topics = info['topics']
             flags = info.get('outlier_flags', [False] * len(clusters))
 
-            # ステージ内でのクラスタの対応関係を記録
-            cluster_to_y = {}
-            unique_cids = sorted(set(c for c in clusters if c != -1))
-            y_positions = np.linspace(0, y_max, len(
-                unique_cids)) if unique_cids else []
-
-            for cid_idx, cid in enumerate(unique_cids):
-                cluster_to_y[cid] = y_positions[cid_idx]
+            # ステージ内での最大サンプル数を追跡
+            stage_samples = []
 
             for sample_idx, cid in enumerate(clusters):
                 if cid == -1:  # ノイズを除外
@@ -375,8 +431,16 @@ class CombinedVisualizer:
                 # クラスタに属するサンプル数でノードサイズを計算
                 cid_count = sum(1 for c in clusters if c == cid)
                 node_degrees[node] = cid_count
-                # y座標を等間隔に配置
-                pos[node] = (stage, cluster_to_y[cid])
+                stage_samples.append((node, cid_count))
+                # グローバルなY座標マッピングを使用（全ステージで統一）
+                pos[node] = (stage, global_cid_to_y[cid])
+
+            # デバッグ：各ステージの最大ノードを記録
+            if stage_samples:
+                max_node, max_count = max(stage_samples, key=lambda x: x[1])
+                stage_max_nodes[stage] = (max_node, max_count)
+                print(
+                    f"[DEBUG merged_graph] Stage {stage} ({col}): max_node={max_node}, sample_count={max_count}")
 
         # エッジ生成: サンプルIDでノードを繋ぐ（ノイズ-1を除外）
         n_samples = len(merged_infos[0]['clusters'])
